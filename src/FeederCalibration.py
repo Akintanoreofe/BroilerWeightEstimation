@@ -1,6 +1,4 @@
-# =========================
-# Feeder Calibration
-# =========================
+"""Estimate video pixel scale from the feeder visible in its first frame."""
 
 import cv2
 import numpy as np
@@ -10,7 +8,27 @@ FEEDER_DIAMETER_CM = 14 * 2.54  # 14 inches = 35.56 cm
 
 
 def calibrate_pixel_to_cm(video_path: str) -> float:
-    """Detect the orange feeder in the first frame and compute pixel_to_cm."""
+    """Estimate centimeters per pixel using the orange feeder in frame one.
+
+    The feeder is detected by its HSV color range; a circle enclosing its
+    convex hull supplies the pixel diameter used for calibration.
+
+    Parameters
+    ----------
+    video_path : str
+        Path or source accepted by :class:`VideoReader`.
+
+    Returns
+    -------
+    float
+        Physical centimeters represented by one pixel.
+
+    Raises
+    ------
+    RuntimeError
+        If the first frame cannot be read, no feeder is detected, or the
+        detected feeder diameter is less than 10 pixels.
+    """
     reader = VideoReader(video_path)
     ret, frame = reader.read()
     reader.release()
