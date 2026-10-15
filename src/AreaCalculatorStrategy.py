@@ -1,6 +1,8 @@
-# =========================
-# AreaCalculator Strategy
-# =========================
+"""Strategies for estimating broiler volume from segmented masks.
+
+The calculators implement a common interface for deriving volume estimates
+from :class:`ObjectInfo` instances.
+"""
 
 
 from abc import ABC, abstractmethod
@@ -9,23 +11,74 @@ from ObjectFilterStrategy import ObjectInfo
 
 
 class AreaCalculator(ABC):
+    """Abstract interface for mask-based volume calculators."""
+
     @abstractmethod
     def volume_from_mask(self, obj: ObjectInfo) -> ObjectInfo:
+        """Estimate volume from an object's mask.
+
+        Parameters
+        ----------
+        obj : ObjectInfo
+            Object whose mask is used for the estimate.
+
+        Returns
+        -------
+        ObjectInfo
+            The object with its volume estimate updated.
+        """
         pass
 
 
 class PixelAreaCalculator(AreaCalculator):
+    """Placeholder calculator for pixel-based volume estimation."""
+
     def volume_from_mask(self, obj: ObjectInfo) -> ObjectInfo:
+        """Estimate volume from a mask.
+
+        Parameters
+        ----------
+        obj : ObjectInfo
+            Object whose mask would be used for the estimate.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, because pixel-based calculation is not implemented.
+        """
         raise NotImplementedError("PixelAreaCalculator is not yet implemented.")
 
 
 class CalibratedAreaCalculator(AreaCalculator):
+    """Estimate volume using a pixel-to-centimeter scale and density."""
 
     def __init__(self, pixel_to_cm: float, broiler_density: float = 900.0):  # density kg/m3
+        """Initialize the calibrated volume calculator.
+
+        Parameters
+        ----------
+        pixel_to_cm : float
+            Physical length in centimeters represented by one pixel.
+        broiler_density : float, default=900.0
+            Assumed broiler density in kilograms per cubic meter.
+        """
         self.pixel_to_cm = pixel_to_cm
         self.density = broiler_density
 
     def volume_from_mask(self, obj: ObjectInfo) -> ObjectInfo:
+        """Estimate volume by summing circular slices along the mask width.
+
+        Parameters
+        ----------
+        obj : ObjectInfo
+            Object whose binary mask is used for the estimate.
+
+        Returns
+        -------
+        ObjectInfo
+            The same object, with ``volume`` set to the estimated mass in kg.
+            An empty mask produces a volume of ``0.0``.
+        """
 
         mask = obj.mask
         mask_bool = mask > 0

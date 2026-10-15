@@ -1,8 +1,8 @@
-"""
-Video Preprocessing Script for Broiler Weight Estimation Pipeline.
+"""Interactive video preprocessing utility for the estimation pipeline.
 
 Crops raw videos to a user-selected region and time range,
 collects weight metadata, and saves results to test_videos/.
+When run as a script, it invokes :func:`main`.
 
 Usage:
     Single video:
@@ -33,7 +33,24 @@ METADATA_CSV = OUTPUT_DIR / "metadata.csv"
 
 
 def parse_time(time_str: str) -> float:
-    """Parse a time string (HH:MM:SS or seconds) into seconds."""
+    """Convert a colon-delimited time or seconds value to seconds.
+
+    Parameters
+    ----------
+    time_str : str
+        Time as ``HH:MM:SS``, ``MM:SS``, or a number of seconds. ``None``
+        returns ``None``.
+
+    Returns
+    -------
+    float or None
+        Parsed time in seconds.
+
+    Raises
+    ------
+    ValueError
+        If the string contains a value that cannot be converted to a number.
+    """
     if time_str is None:
         return None
     parts = time_str.split(":")
@@ -48,7 +65,18 @@ def parse_time(time_str: str) -> float:
 
 
 def format_time(seconds: float) -> str:
-    """Format seconds into HH:MM:SS."""
+    """Format a number of seconds as hours, minutes, and fractional seconds.
+
+    Parameters
+    ----------
+    seconds : float
+        Time in seconds.
+
+    Returns
+    -------
+    str
+        Time formatted as ``HH:MM:SS.ss``.
+    """
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = seconds % 60
@@ -56,10 +84,26 @@ def format_time(seconds: float) -> str:
 
 
 def select_time_range_interactive(video_path: str) -> tuple:
-    """
-    Open a tkinter GUI with video preview, slider, and buttons to select
-    start/end times. Video is paused by default — drag the slider to browse
-    frames, then click Set Start / Set End. Optionally press Play to preview.
+    """Use a GUI to select a start and end time in a video.
+
+    The preview is paused initially; the slider browses frames, and the
+    controls set the start/end points or play the video before confirmation.
+
+    Parameters
+    ----------
+    video_path : str
+        Input video path.
+
+    Returns
+    -------
+    tuple of float
+        Selected ``(start_time, end_time)`` in seconds. The values are swapped
+        if the chosen start is later than the chosen end.
+
+    Raises
+    ------
+    RuntimeError
+        If the video cannot be opened.
     """
     import threading
     from tkinter import ttk
@@ -125,22 +169,26 @@ def select_time_range_interactive(video_path: str) -> tuple:
     btn_frame.pack(pady=10)
 
     def set_start():
+        """Set the selected start time to the currently displayed frame."""
         t = state["current_frame"] / fps if fps > 0 else 0
         state["start_time"] = t
         start_var.set(f"Start: {format_time(t)}")
         print(f"Start time set: {format_time(t)}")
 
     def set_end():
+        """Set the selected end time to the currently displayed frame."""
         t = state["current_frame"] / fps if fps > 0 else 0
         state["end_time"] = t
         end_var.set(f"End: {format_time(t)}")
         print(f"End time set: {format_time(t)}")
 
     def toggle_play():
+        """Toggle preview playback and update the button label."""
         state["playing"] = not state["playing"]
         play_btn.config(text="Pause" if state["playing"] else "Play")
 
     def confirm():
+        """Stop the preview, mark the selection confirmed, and close the GUI."""
         state["playing"] = False
         state["confirmed"] = True
         if state.get("after_id"):
@@ -158,6 +206,13 @@ def select_time_range_interactive(video_path: str) -> tuple:
 
     # Read and display a frame
     def show_frame_at(frame_idx):
+        """Display a frame and refresh the current-frame and time labels.
+
+        Parameters
+        ----------
+        frame_idx : int
+            Index of the frame to display.
+        """
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if not ret:
@@ -182,6 +237,7 @@ def select_time_range_interactive(video_path: str) -> tuple:
     last_slider_val = [0]
 
     def update_loop():
+        """Advance playback or respond to slider movement until confirmation."""
         if state["confirmed"]:
             return
         if state["playing"]:
@@ -221,7 +277,13 @@ def select_time_range_interactive(video_path: str) -> tuple:
 
 
 def get_screen_size() -> tuple:
-    """Get screen resolution using tkinter."""
+    """Get the display resolution through tkinter.
+
+    Returns
+    -------
+    tuple of int
+        Screen width and height in pixels.
+    """
     root = tk.Tk()
     root.withdraw()
     screen_w = root.winfo_screenwidth()
@@ -231,9 +293,27 @@ def get_screen_size() -> tuple:
 
 
 def select_crop_region(video_path: str, start_time: float) -> tuple:
-    """
-    Display the frame at start_time (resized to fit screen) and let user draw a bounding box.
-    Returns (x, y, w, h) in original frame coordinates.
+    """Display a video frame and let the user select a crop rectangle.
+
+    The selected rectangle is mapped back to original frame coordinates. If
+    the selection is canceled, the full frame is returned.
+
+    Parameters
+    ----------
+    video_path : str
+        Input video path.
+    start_time : float
+        Time in seconds at which to display the frame for selection.
+
+    Returns
+    -------
+    tuple of int
+        Crop rectangle ``(x, y, width, height)`` in original frame pixels.
+
+    Raises
+    ------
+    RuntimeError
+        If the video cannot be opened or the requested frame cannot be read.
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -295,7 +375,14 @@ def select_crop_region(video_path: str, start_time: float) -> tuple:
 
 
 def ask_weight() -> float:
-    """Show a tkinter dialog to input the broiler chicken weight in kg."""
+    """Ask for a broiler weight using a tkinter dialog.
+
+    Returns
+    -------
+    float
+        Entered weight in kilograms, or ``0.0`` if the dialog closes without
+        a valid value.
+    """
     weight = [None]
 
     root = tk.Tk()
@@ -310,6 +397,13 @@ def ask_weight() -> float:
     entry.focus_set()
 
     def on_ok(event=None):
+        """Parse the entered weight or display an invalid-number message.
+
+        Parameters
+        ----------
+        event : tkinter event or None, optional
+            Event supplied when the Return key triggers the callback.
+        """
         try:
             val = float(entry.get())
             weight[0] = val
@@ -332,7 +426,15 @@ def ask_weight() -> float:
 
 
 def save_metadata(video_name: str, weight_kg: float):
-    """Append a row to the metadata CSV file."""
+    """Append a video name and weight to the metadata CSV file.
+
+    Parameters
+    ----------
+    video_name : str
+        Name of the processed video.
+    weight_kg : float
+        Recorded weight in kilograms.
+    """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     file_exists = METADATA_CSV.exists()
 
@@ -346,7 +448,21 @@ def save_metadata(video_name: str, weight_kg: float):
 
 
 def process_video(video_path: str, roi: tuple, start_time: float, end_time: float, weight_kg: float):
-    """Crop the video spatially and temporally, then save to test_videos/."""
+    """Crop a video's frames to a region and time interval, then save metadata.
+
+    Parameters
+    ----------
+    video_path : str
+        Source video path.
+    roi : tuple of int
+        Crop rectangle ``(x, y, width, height)`` in source-frame coordinates.
+    start_time : float
+        Start time in seconds.
+    end_time : float
+        End time in seconds.
+    weight_kg : float
+        Weight to record for the resulting video.
+    """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     video_name = Path(video_path).stem
@@ -395,6 +511,12 @@ def process_video(video_path: str, roi: tuple, start_time: float, end_time: floa
 
 
 def main():
+    """Parse command-line options and run interactive or batch preprocessing.
+
+    Accepts either one input video or a directory of videos. A shared time
+    range and crop are selected, then each video is cropped and its weight
+    metadata is recorded.
+    """
     parser = argparse.ArgumentParser(
         description="Preprocess raw videos: crop spatially and temporally, record weight metadata."
     )

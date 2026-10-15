@@ -1,6 +1,8 @@
-# =========================
-# Main Execution
-# =========================
+"""Configure and run the broiler-weight estimation pipeline.
+
+When executed as a script, :func:`main` processes the configured sample video,
+calibrates its pixel scale, and writes annotated video and CSV results.
+"""
 
 import os
 from pathlib import Path
@@ -18,6 +20,13 @@ RESULTS_DIR = SCRIPT_DIR.parent / "results"
 
 
 def main():
+    """Run the pipeline on the configured camera video.
+
+    Creates the result directory, constructs the camera configuration and
+    processing strategies, calibrates from the source video, and runs the
+    processor. The configured source is ``test_videos/cam1.mp4`` relative to
+    the repository root.
+    """
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 

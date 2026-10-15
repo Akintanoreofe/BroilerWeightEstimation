@@ -1,6 +1,4 @@
-# =========================
-# VideoProcessor (Pipeline)
-# =========================
+"""Coordinate segmentation, object filtering, estimation, and video output."""
 
 from typing import Optional
 import cv2
@@ -13,6 +11,7 @@ from VideoIOClass import VideoReader, VideoWriter
 
 
 class VideoProcessor:
+    """Run the processing pipeline for a configured camera video."""
 
     def __init__(
         self,
@@ -24,6 +23,31 @@ class VideoProcessor:
         show_img: bool = True,
         max_frames: Optional[int] = None
     ):
+        """Initialize pipeline strategies and open its input/output streams.
+
+        Parameters
+        ----------
+        camera_config : CameraConfig
+            Camera identifier and input/output video paths.
+        segmenter : Segmenter
+            Strategy that creates a mask for each frame.
+        area_calculator : AreaCalculator
+            Strategy that estimates object volume or mass.
+        obj_filter : ObjectFilter
+            Strategy that selects candidate objects from masks.
+        output_writer : OutputWriter
+            Writer for per-object result records.
+        show_img : bool, default=True
+            Whether to display a live processing window.
+        max_frames : int or None, default=None
+            Maximum number of frames to process; ``None`` processes until the
+            source ends.
+
+        Raises
+        ------
+        RuntimeError
+            If the configured input video cannot be opened.
+        """
         self.config = camera_config
         self.segmenter = segmenter
         self.area_calculator = area_calculator
@@ -41,6 +65,11 @@ class VideoProcessor:
         )
 
     def run(self):
+        """Process frames until the video ends, the limit is reached, or quit.
+
+        Selected objects are annotated in the output video and written as
+        records. Resources are released by :meth:`clean_up` at normal exit.
+        """
 
         frame_idx = 0
 
@@ -102,6 +131,7 @@ class VideoProcessor:
         self.clean_up()
 
     def clean_up(self):
+        """Release video and result-writer resources and close display windows."""
         self.video_reader.release()
         self.video_writer.release()
         self.output_writer.close()
