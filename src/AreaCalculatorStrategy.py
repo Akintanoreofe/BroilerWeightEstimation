@@ -96,6 +96,7 @@ class CalibratedAreaCalculator(AreaCalculator):
 
         mask_valid_cols = mask_bool[:, col_has_obj]
 
+        # Each occupied image column becomes one circular slice; its mask height is the diameter.
         y_min = mask_valid_cols.argmax(axis=0)
 
         flipped = np.flipud(mask_valid_cols)
@@ -103,8 +104,10 @@ class CalibratedAreaCalculator(AreaCalculator):
         y_max = (H - 1) - y_max_from_bottom
         width = (y_max - y_min + 1).astype(np.float32)
         radius = width * self.pixel_to_cm / 2.0
+        # Slice thickness is one pixel in cm, so summing circle areas gives volume in cm³.
         V = float(np.pi * np.sum(radius ** 2) * self.pixel_to_cm)
 
-        obj.volume = (V / 1_000_000) * self.density  # convert to cubic meters
+        # Convert cm³ to m³ before multiplying by density (kg/m³) to obtain mass in kg.
+        obj.volume = (V / 1_000_000) * self.density
 
         return obj

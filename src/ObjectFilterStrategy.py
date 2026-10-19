@@ -151,6 +151,7 @@ class SimpleObjectFilter(ObjectFilter):
             peak_cnts, _ = cv2.findContours(peaks, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             num_peaks = len(peak_cnts)
 
+            # Multiple distance-transform peaks usually indicate touching birds, so reject the blob.
             if num_peaks == 1:
                 obj_info = self.score_blob(blob_mask, c, dist, area)
                 if obj_info:
@@ -260,6 +261,7 @@ class SimpleObjectFilter(ObjectFilter):
         dt_arr = np.array(dt_arr)
         tpl_arr = np.array(tpl_arr)
 
+        # Normalize distance-transform scores across candidates; template similarity is already in [0, 1].
         dt_min, dt_max = dt_arr.min(), dt_arr.max()
         dt_norm = (dt_arr - dt_min) / (dt_max - dt_min + 1e-6)
         tpl_norm = np.clip(tpl_arr, 0.0, 1.0)

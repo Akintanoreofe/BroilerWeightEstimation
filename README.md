@@ -137,6 +137,21 @@ The CSV output contains the following columns:
 | `volume`    | Estimated weight (kg) |
 | `crop_region` | Bounding box coordinates `(x, y, w, h)` |
 
+### Validate Weight Estimates
+
+To compare estimates with measured weights, add an `actual_weight_kg` column to
+the results CSV, with one measured weight in kilograms on each corresponding
+row. The pipeline's estimated weights are in the `volume` column. Then run:
+
+```bash
+python src/weight_validation.py results/cam1_results.csv
+```
+
+The script reports mean absolute error (MAE), root mean squared error (RMSE),
+mean bias (estimate minus actual), and mean absolute percentage error (MAPE).
+Rows with zero actual weight are excluded from MAPE. For different column
+names, use `--actual-column` and `--estimated-column`.
+
 ---
 
 ## Known Tradeoffs
