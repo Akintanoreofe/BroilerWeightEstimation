@@ -79,6 +79,7 @@ class ClassicalSegmenter(Segmenter):
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
         blur = cv2.GaussianBlur(v, (5, 5), 0)
+        # Otsu chooses a brightness threshold from this frame rather than a fixed cutoff.
         _, mask = cv2.threshold(
             blur, 0, 255,
             cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -88,6 +89,7 @@ class ClassicalSegmenter(Segmenter):
         mask[feeder_mask == 255] = 0
 
         kernel = np.ones((5, 5), np.uint8)
+        # Opening removes small specks; closing fills gaps in the remaining foreground.
         mask_morph = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
         mask_morph = cv2.morphologyEx(mask_morph, cv2.MORPH_CLOSE, kernel, iterations=2)
 

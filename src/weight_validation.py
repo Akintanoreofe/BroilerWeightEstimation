@@ -48,8 +48,10 @@ def load_weight_pairs(
 
 def calculate_metrics(pairs: List[Tuple[float, float]]) -> dict:
     """Calculate common error metrics; weights are in kilograms."""
+    # Positive bias means the system overestimates weight on average.
     errors = [estimated - actual for actual, estimated in pairs]
     absolute_errors = [abs(error) for error in errors]
+    # MAPE is undefined for zero actual weights, so omit those rows from this metric only.
     nonzero_actual_errors = [
         abs(error) / abs(actual) * 100
         for (actual, _), error in zip(pairs, errors)
