@@ -175,18 +175,23 @@ The CSV output contains the following columns:
 
 #### FlockLabel export and notebook
 
-Install the pipeline and notebook dependencies, start Jupyter, and open
-`src/validation_walkthrough.ipynb`:
+In a remote VS Code workspace, install the pipeline and notebook dependencies
+in the Python environment used by the remote notebook kernel:
 
 ```bash
-python -m pip install -r requirements.txt jupyter
-jupyter notebook
+python -m pip install -r requirements.txt ipykernel
 ```
 
-Set `EXPORT_DIR` in the first code cell to your export and run all cells.
-Relative export paths are resolved from the repository root. If Jupyter was
-started outside the repository, also set `REPO_ROOT` in that cell to the
-absolute path of the repository folder (containing `src/run_eval.py`). The
+Open `src/validation_walkthrough.ipynb` in VS Code and select that remote
+Python kernel. Copy the FlockLabel export to the remote machine (for example
+into a `dataset` directory at the repository root). The existing `EXPORT_DIR`
+path in the first code cell is a local Mac path; change it to the remote export
+directory unless that path is mounted in the remote environment, then run all
+cells. Paths on your local computer are not otherwise accessible remotely.
+Relative export paths are resolved from the repository root. The root is
+automatically found when the kernel's working directory is inside the
+repository. Otherwise, set `REPO_ROOT` to the absolute remote path of the
+repository folder (containing `src/run_eval.py`), not to the script itself. The
 notebook displays a sample frame, calibration, segmentation mask, filtering and
 weight estimates, then processes every clip, reports validation metrics and
 generates comparison videos. The videos show ground-truth boxes in green and
