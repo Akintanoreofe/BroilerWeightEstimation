@@ -199,6 +199,37 @@ estimated boxes in red, including unmatched boxes. The first labeled clip is
 embedded in the notebook; all comparisons are saved under
 `<export>/results/comparisons/`. Some browsers may not support OpenCV's MP4
 codec; open the saved video locally if necessary.
+For each selected bird in the preview frame, the notebook shows its unrotated
+binary mask, that mask overlaid on the original frame, and the aligned mask
+used to calculate its weight. Change `PREVIEW_VIDEO` or `PREVIEW_FRAME` to
+inspect a different frame; no bird masks are shown when none passes selection.
+The slice visualization colors the aligned mask by column group and shows
+the sampled diameters, individual slice volumes, and their total. These
+circular sections are model assumptions, not measured 3D anatomy.
+
+Before running the notebook, set `SCALE_POLYGONS` in its setup cell to the
+corners of the **square weighing platform**, not the orange feeder, for every
+exact exported video filename. Coordinates are `[x, y]` in the exported
+video's pixels, after any crop. Inspect the displayed outline for each clip.
+The notebook refuses to run the full validation without every polygon. The
+platform is manually outlined, not automatically detected. A candidate must
+have at least 80% of its filled, unrotated silhouette inside the outline
+before top-K selection; adjust `MIN_SCALE_OVERLAP` if appropriate. The full,
+unclipped bird silhouette is rotated and used for mass estimation.
+Silhouette overlap does **not** prove that the bird is weight-bearing on the
+scale, and occlusion, multiple birds and segmentation errors can invalidate
+the association with a reading. Review the frames and matches.
+
+The optional, disabled-by-default tuning cell tries slice counts and densities
+on matched, labeled scale frames. Supply disjoint calibration and held-out
+event IDs; it ranks by calibration event-level RMSE and reports the held-out
+score only for the selected grid candidate. Set the selected `SLICE_COUNT`
+and `DENSITY` in the setup cell and rerun the pipeline to apply them. Tuning
+and evaluation on the same events is not an independent accuracy assessment.
+The model assumes circular cross-sections inferred from a top-view silhouette,
+not measured depth. `SLICE_COUNT = None` retains the original one-column-per-
+slice calculation; otherwise each group of columns uses its middle column's
+diameter and the group's width.
 
 The expected export structure is:
 
@@ -228,6 +259,12 @@ python src/evaluate_against_gt.py /path/to/export/ground_truth/gt_boxes.csv \
   --results-dir /path/to/export/results --out /path/to/export/results/evaluation \
   --gt-frame-offset 0
 ```
+
+The CLI retains its original all-bird behavior unless `--scale-polygons
+/path/to/polygons.json` is supplied. The JSON maps each exact video name to
+its polygon points, as in the notebook's `results/scale_polygons.json`. Use
+`--min-scale-overlap`, `--density`, and `--slices` to match notebook settings;
+pass the same density to the evaluator with `--density`.
 
 The evaluator greedily matches boxes by IoU on the same video and frame.
 Estimates on frames without ground-truth labels are counted as unmatched, not

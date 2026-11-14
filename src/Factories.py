@@ -82,6 +82,10 @@ class AreaCalculatorFactory:
             pixel_to_cm = kwargs.get("pixel_to_cm")
             if pixel_to_cm == 0 or pixel_to_cm is None:
                 raise ValueError("pixel_to_cm is required for CALIBRATED area method")
-            return CalibratedAreaCalculator(pixel_to_cm=pixel_to_cm)
+            return CalibratedAreaCalculator(
+                pixel_to_cm=pixel_to_cm,
+                broiler_density=kwargs.get("broiler_density", 900.0),
+                slice_count=kwargs.get("slice_count"),
+            )
         else:
             raise ValueError(f"Unknown area method: {method}")
