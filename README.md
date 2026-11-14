@@ -183,7 +183,10 @@ python -m pip install -r requirements.txt jupyter
 jupyter notebook
 ```
 
-Set `EXPORT_DIR` in the first code cell to your export and run all cells. The
+Set `EXPORT_DIR` in the first code cell to your export and run all cells.
+Relative export paths are resolved from the repository root. If Jupyter was
+started outside the repository, also set `REPO_ROOT` in that cell to the
+absolute path of the repository folder (containing `src/run_eval.py`). The
 notebook displays a sample frame, calibration, segmentation mask, filtering and
 weight estimates, then processes every clip, reports validation metrics and
 generates comparison videos. The videos show ground-truth boxes in green and
