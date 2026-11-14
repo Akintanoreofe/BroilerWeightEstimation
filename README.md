@@ -175,8 +175,8 @@ The CSV output contains the following columns:
 
 #### FlockLabel export and notebook
 
-Install the pipeline and notebook dependencies, start Jupyter from the repository
-root, and open `validation_walkthrough.ipynb`:
+Install the pipeline and notebook dependencies, start Jupyter, and open
+`src/validation_walkthrough.ipynb`:
 
 ```bash
 python -m pip install -r requirements.txt jupyter

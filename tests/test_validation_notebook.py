@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ValidationNotebookTest(unittest.TestCase):
     def test_repository_discovery_and_override(self):
-        notebook = json.loads((ROOT / "validation_walkthrough.ipynb").read_text())
+        notebook = json.loads((ROOT / "src" / "validation_walkthrough.ipynb").read_text())
         setup = "".join(notebook["cells"][1]["source"])
         with patch.object(Path, "cwd", return_value=ROOT / "src"):
             namespace = {}
