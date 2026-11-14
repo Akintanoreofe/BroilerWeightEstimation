@@ -6,7 +6,7 @@ in the same video and frame by IoU, and writes:
 
 * ``matched.csv``   - one row per matched estimate, with ``actual_weight_kg``
   added so ``weight_validation.py`` can score it unchanged;
-* ``per_event.csv`` - one row per weigh event (median estimate vs weight);
+* ``per_event.csv`` - one row per video/event (median estimate vs median scale reading);
 * a printed summary of frame-level and event-level error and detection rate.
 """
 import argparse
@@ -28,18 +28,21 @@ def iou(a, b):
     return inter / union if union > 0 else 0.0
 
 
-def load_gt(path):
+def load_gt(path, frame_offset=0):
     gt = defaultdict(list)          # (video, frame) -> [row]
     with open(path, newline="") as fh:
         for r in csv.DictReader(fh):
             r["box"] = tuple(float(r[k]) for k in ("x", "y", "w", "h"))
             r["weight_kg"] = float(r["weight_kg"])
-            gt[(r["video_name"], int(r["frame_idx"]))].append(r)
+            gt[(r["video_name"], int(r["frame_idx"]) + frame_offset)].append(r)
     return gt
 
 
 def load_estimates(results_csv, video_name):
     rows = []
+    if not Path(results_csv).is_file():
+        print(f"[warn] no results file for {video_name}: {results_csv}")
+        return rows
     with open(results_csv, newline="") as fh:
         for r in csv.DictReader(fh):
             r["video_name"] = video_name
@@ -57,24 +60,39 @@ def metrics(pairs):
         "mae": statistics.fmean(abs(x) for x in err),
         "rmse": math.sqrt(statistics.fmean(x * x for x in err)),
         "bias": statistics.fmean(err),
-        "mape": statistics.fmean(abs(e - a) / a * 100 for a, e in pairs if a),
+        "mape": statistics.fmean([abs(e - a) / abs(a) * 100 for a, e in pairs if a])
+        if any(a for a, _ in pairs) else float("nan"),
     }
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("gt_csv", type=Path)
-    p.add_argument("results", nargs="+",
+    p.add_argument("results", nargs="*",
                    help="video_name=path/to/<camera_id>_results.csv pairs")
+    p.add_argument("--results-dir", type=Path,
+                   help="folder of <clip stem>_results.csv files, paired automatically")
     p.add_argument("--iou", type=float, default=0.3)
+    p.add_argument("--gt-frame-offset", type=int, default=0,
+                   help="add to GT frame numbers (use 1 for zero-based GT)")
     p.add_argument("--out", type=Path, default=Path("eval_out"))
     p.add_argument("--density", type=float, default=900.0,
                    help="density the pipeline ran with (kg/m3)")
     a = p.parse_args()
 
-    gt = load_gt(a.gt_csv)
+    if not 0 <= a.iou <= 1:
+        p.error("--iou must be between 0 and 1")
+    gt = load_gt(a.gt_csv, a.gt_frame_offset)
+    specs = list(a.results)
+    if a.results_dir:
+        for video in sorted({v for v, _ in gt}):
+            specs.append(f"{video}={a.results_dir / (Path(video).stem + '_results.csv')}")
+    if not specs:
+        p.error("give VIDEO=RESULTS pairs or --results-dir")
     estimates = []
-    for spec in a.results:
+    for spec in specs:
+        if "=" not in spec:
+            p.error(f"invalid result pair: {spec!r}")
         video, path = spec.split("=", 1)
         estimates += load_estimates(path, video)
 
@@ -103,15 +121,17 @@ def main():
     n_gt = sum(len(v) for v in gt.values())
     a.out.mkdir(parents=True, exist_ok=True)
     with open(a.out / "matched.csv", "w", newline="") as fh:
-        if matched:
-            w = csv.DictWriter(fh, fieldnames=list(matched[0]))
-            w.writeheader(); w.writerows(matched)
+        w = csv.DictWriter(fh, fieldnames=["video_name", "frame_idx", "volume", "score",
+                                           "crop_region", "iou", "actual_weight_kg", "event_id"])
+        w.writeheader()
+        w.writerows(matched)
 
     events = defaultdict(list)
-    weight_of = {}
+    actuals = defaultdict(list)
     for m in matched:
         events[m["event_id"]].append(m["volume"])
-        weight_of[m["event_id"]] = m["actual_weight_kg"]
+        actuals[m["event_id"]].append(m["actual_weight_kg"])
+    weight_of = {k: statistics.median(v) for k, v in actuals.items()}
     gt_events = {g["event_id"] for rows in gt.values() for g in rows}
     with open(a.out / "per_event.csv", "w", newline="") as fh:
         w = csv.writer(fh)
@@ -135,11 +155,14 @@ def main():
         # Estimates scale linearly with density, so the best density is closed-form.
         act = [weight_of[k] for k in events]
         est = [statistics.median(v) for v in events.values()]
-        rho_ls = a.density * sum(x * y for x, y in zip(act, est)) / sum(y * y for y in est)
-        rho_unbiased = a.density * sum(act) / sum(est)
-        print(f"Density fit (event level, from {a.density:g} kg/m3): least-squares "
-              f"{rho_ls:.0f} kg/m3, zero-bias {rho_unbiased:.0f} kg/m3. "
-              "Fit on a calibration subset and report error on held-out events.")
+        if sum(y * y for y in est) and sum(est):
+            rho_ls = a.density * sum(x * y for x, y in zip(act, est)) / sum(y * y for y in est)
+            rho_unbiased = a.density * sum(act) / sum(est)
+            print(f"Density fit (event level, from {a.density:g} kg/m3): least-squares "
+                  f"{rho_ls:.0f} kg/m3, zero-bias {rho_unbiased:.0f} kg/m3. "
+                  "Fit on a calibration subset and report error on held-out events.")
+        else:
+            print("Density fit unavailable: estimates sum to zero.")
 
 
 if __name__ == "__main__":

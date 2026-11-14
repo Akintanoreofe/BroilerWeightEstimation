@@ -1,14 +1,13 @@
 """Run BroilerWeightEstimation on every clip in a FlockLabel evaluation export.
 
-Usage (from the repo's src/ folder):
-    python /path/run_eval.py /path/to/export --out /path/to/export/results
+Usage:
+    python src/run_eval.py /path/to/export --out /path/to/export/results
 """
 import argparse
 import csv
-import sys
+import math
 from pathlib import Path
 
-sys.path.insert(0, str(Path.cwd()))          # repo src/ must be the working dir
 from FeederCalibration import calibrate_pixel_to_cm
 from Factories import AreaCalculatorFactory, AreaMethod, SegmentationMethod, SegmenterFactory
 from ObjectFilterStrategy import SimpleObjectFilter
@@ -25,9 +24,15 @@ def main():
     out = a.out or a.export_dir / "results"
     out.mkdir(parents=True, exist_ok=True)
 
-    events = {r["video_name"]: r for r in
-              csv.DictReader(open(a.export_dir / "ground_truth" / "events.csv"))}
-    for row in csv.DictReader(open(a.export_dir / "test_videos" / "metadata.csv")):
+    with open(a.export_dir / "ground_truth" / "events.csv", newline="") as fh:
+        events = {r["video_name"]: r for r in csv.DictReader(fh)}
+    with open(a.export_dir / "test_videos" / "metadata.csv", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    stems = [Path(row["video_name"]).stem for row in rows]
+    if len(stems) != len(set(stems)):
+        raise ValueError("Video names must have unique stems to avoid overwriting results")
+    skipped = []
+    for row in rows:
         name = row["video_name"]
         video = a.export_dir / "test_videos" / name
         stem = Path(name).stem
@@ -36,7 +41,11 @@ def main():
             px = float(fixed) if fixed else calibrate_pixel_to_cm(str(video))
         except RuntimeError as err:
             print(f"[skip] {name}: {err}")
+            skipped.append(name)
             continue
+        if not math.isfinite(px) or px <= 0:
+            raise ValueError(f"Invalid pixel_to_cm for {name}: {px}")
+        print(f"[calibration] {name}: {px:g} cm/pixel")
         cam = CameraConfigLoader().get_camera_info(stem, str(video), str(out / f"{stem}_annotated.mp4"))
         VideoProcessor(
             camera_config=cam,
@@ -44,10 +53,13 @@ def main():
             area_calculator=AreaCalculatorFactory().create(
                 AreaMethod.CALIBRATED, pixel_to_cm=px),  # density fixed at 900 kg/m3
             obj_filter=SimpleObjectFilter(target_labels=["Broiler"],
-                                          template_mask="broiler_template.png", min_area=500.0),
+                                          template_mask=str(Path(__file__).resolve().parent / "broiler_template.png"),
+                                          min_area=500.0),
             output_writer=CSVOutputWriter(str(out / f"{stem}_results.csv")),
             show_img=False,
         ).run()
+    if skipped:
+        raise RuntimeError(f"Calibration failed for {len(skipped)} video(s): {', '.join(skipped)}")
 
 
 if __name__ == "__main__":
