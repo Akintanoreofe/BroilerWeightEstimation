@@ -12,11 +12,17 @@ class ValidationNotebookTest(unittest.TestCase):
     def test_repository_discovery_and_override(self):
         notebook = json.loads((ROOT / "src" / "validation_walkthrough.ipynb").read_text())
         setup = "".join(notebook["cells"][1]["source"])
-        with patch.object(Path, "cwd", return_value=ROOT / "src"):
-            namespace = {}
-            exec(setup, namespace)
-            self.assertEqual(namespace["ROOT"], ROOT)
-            self.assertEqual(namespace["EXPORT_DIR"], ROOT / "dataset")
+        for cwd in (ROOT, ROOT / "src"):
+            with self.subTest(cwd=cwd), patch.object(Path, "cwd", return_value=cwd):
+                namespace = {}
+                exec(setup, namespace)
+                self.assertEqual(namespace["ROOT"], ROOT)
+                relative_setup = setup.replace(
+                    "Path('/Users/akintanoreofeoluwa/Downloads/dataset_2026-11-14_1446')",
+                    "Path('dataset')",
+                )
+                exec(relative_setup, namespace)
+                self.assertEqual(namespace["EXPORT_DIR"], ROOT / "dataset")
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(Path, "cwd", return_value=Path(tmp)):
                 with self.assertRaisesRegex(FileNotFoundError, "Set REPO_ROOT"):
@@ -26,6 +32,8 @@ class ValidationNotebookTest(unittest.TestCase):
                 self.assertEqual(namespace["ROOT"], ROOT)
                 with self.assertRaisesRegex(FileNotFoundError, "REPO_ROOT does not contain"):
                     exec(setup.replace("REPO_ROOT = None", f"REPO_ROOT = {tmp!r}", 1), {})
+                with self.assertRaisesRegex(FileNotFoundError, "REPO_ROOT does not contain"):
+                    exec(setup.replace("REPO_ROOT = None", f"REPO_ROOT = {str(ROOT / 'src' / 'run_eval.py')!r}", 1), {})
 
 
 if __name__ == "__main__":
