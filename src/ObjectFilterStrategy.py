@@ -117,6 +117,7 @@ class SimpleObjectFilter(ObjectFilter):
         self.padding = padding
         self.too_small_thresh = too_small_thresh
         self.img_border = img_border
+        self.last_rejections = {}
         if not math.isfinite(min_scale_overlap) or not 0 < min_scale_overlap <= 1:
             raise ValueError("min_scale_overlap must be in (0, 1]")
         self.scale_polygon = scale_polygon
@@ -146,6 +147,8 @@ class SimpleObjectFilter(ObjectFilter):
 
         clean_mask = np.zeros_like(mask)
         single_chicken_masks = []
+        self.last_rejections = {"size": 0, "frame_edge": 0, "scale_overlap": 0,
+                                "multiple_peaks": 0, "alignment": 0, "other": 0}
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         scale_mask = None
         if self.scale_polygon is not None:
@@ -154,6 +157,8 @@ class SimpleObjectFilter(ObjectFilter):
         for c in contours:
             area = cv2.contourArea(c)
             if self.should_filter_contour(c, area, mask.shape):
+                reason = self.contour_rejection_reason(c, area, mask.shape)
+                self.last_rejections[reason or "other"] += 1
                 continue
 
             cv2.drawContours(clean_mask, [c], -1, 255, -1)
@@ -163,6 +168,7 @@ class SimpleObjectFilter(ObjectFilter):
             if scale_mask is not None:
                 overlap = cv2.countNonZero(cv2.bitwise_and(blob_mask, scale_mask))
                 if overlap / cv2.countNonZero(blob_mask) < self.min_scale_overlap:
+                    self.last_rejections["scale_overlap"] += 1
                     continue
             dist = cv2.distanceTransform(blob_mask, cv2.DIST_L2, 5)
             dist_norm = cv2.normalize(dist, None, 0, 1.0, cv2.NORM_MINMAX)
@@ -176,6 +182,10 @@ class SimpleObjectFilter(ObjectFilter):
                 obj_info = self.score_blob(blob_mask, c, dist, area)
                 if obj_info:
                     single_chicken_masks.append(obj_info)
+                else:
+                    self.last_rejections["alignment"] += 1
+            else:
+                self.last_rejections["multiple_peaks"] += 1
 
         if not single_chicken_masks:
             return [], clean_mask
@@ -202,6 +212,10 @@ class SimpleObjectFilter(ObjectFilter):
         bool
             ``True`` if the contour should be discarded.
         """
+        return self.contour_rejection_reason(cnt, area, imgShape) is not None
+
+    def contour_rejection_reason(self, cnt: np.ndarray, area: float, imgShape: np.ndarray) -> Optional[str]:
+        """Return the size or frame-edge rejection reason, if any."""
         x, y, w, h = cv2.boundingRect(cnt)
         leftmost = tuple(cnt[cnt[:,:,0].argmin()][0])
         rightmost = tuple(cnt[cnt[:,:,0].argmax()][0])
@@ -216,10 +230,11 @@ class SimpleObjectFilter(ObjectFilter):
                           topmost[1] <= self.img_border or
                           bottommost[1] >= imgShape[0] - self.img_border)
 
-        if area < self.min_area or too_small_h or too_small_w or touches_border:
-            return True
-
-        return False    
+        if area < self.min_area or too_small_h or too_small_w:
+            return "size"
+        if touches_border:
+            return "frame_edge"
+        return None
     
     def score_blob(self, blob_mask: np.ndarray, contour: np.array, dist: np.ndarray,
                    area: float) -> ObjectInfo:
@@ -323,7 +338,7 @@ class SimpleObjectFilter(ObjectFilter):
         return int(x_new), int(y_new), int(side_length), int(side_length)
 
     def align_mask_by_affine(self, crop: np.array) -> np.ndarray:
-        """Rotate a crop to its estimated object angle and extract its box.
+        """Rotate the object on a padded canvas and return a square crop.
 
         Parameters
         ----------
@@ -336,24 +351,32 @@ class SimpleObjectFilter(ObjectFilter):
             Aligned square crop, or ``None`` when rotation yields no contour.
         """
 
-        H, W = crop.shape[:2]
-        mean_ang = self.object_angle(crop)
-
-        M = cv2.getRotationMatrix2D((crop.shape[1]//2, crop.shape[0]//2), mean_ang, 1)
-        crop = cv2.warpAffine(crop, M, (crop.shape[1], crop.shape[0]), cv2.INTER_NEAREST,
-                              borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-
         contours, _ = cv2.findContours(crop, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         if not contours:
             return None
 
-        largest_contour = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest_contour)
-        x, y, w, h = self.get_square_bbox(x, y, w, h, H, W)
-        cropped = crop[y:y+h, x:x+w]
+        x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+        obj = crop[y:y+h, x:x+w]
+        mean_ang = self.object_angle(obj)
+        side = int(math.ceil(math.hypot(w, h))) + 2
+        canvas = np.zeros((side, side), dtype=crop.dtype)
+        x_offset, y_offset = (side - w) // 2, (side - h) // 2
+        canvas[y_offset:y_offset+h, x_offset:x_offset+w] = obj
+        center = (side / 2.0, side / 2.0)
+        matrix = cv2.getRotationMatrix2D(center, mean_ang, 1)
+        rotated = cv2.warpAffine(canvas, matrix, (side, side), flags=cv2.INTER_NEAREST,
+                                 borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        contours, _ = cv2.findContours(rotated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
 
-        return cropped
+        x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+        aligned = rotated[y:y+h, x:x+w]
+        side = max(w, h) + 2 * self.padding
+        result = np.zeros((side, side), dtype=crop.dtype)
+        x_offset, y_offset = (side - w) // 2, (side - h) // 2
+        result[y_offset:y_offset+h, x_offset:x_offset+w] = aligned
+        return result
 
     def align_mask_by_coords(self, mask: np.ndarray) -> np.ndarray:
         """Rotate foreground coordinates and return a cropped binary mask.

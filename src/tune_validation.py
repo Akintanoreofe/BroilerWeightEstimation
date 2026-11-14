@@ -14,8 +14,11 @@ from SegmentationStrategy import ClassicalSegmenter
 from evaluate_against_gt import iou, load_gt
 
 
-def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, overlap):
-    """Re-segment labeled frames and retain full masks matched to scale readings."""
+def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, overlap=0.8):
+    """Re-segment labeled frames and retain full masks matched to scale readings.
+
+    Pass polygons=None for already-cropped clips without a platform filter.
+    """
     if not 0 < iou_threshold <= 1:
         raise ValueError("iou_threshold must be in (0, 1]")
     export_dir = Path(export_dir)
@@ -29,7 +32,7 @@ def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, o
     segmenter = ClassicalSegmenter()
     matches = []
     for video, frames in sorted(by_video.items()):
-        if video not in polygons:
+        if polygons is not None and video not in polygons:
             raise ValueError(f"No scale polygon for {video}")
         path = export_dir / "test_videos" / video
         fixed = event_by_video.get(video, {}).get("pixel_to_cm", "")
@@ -38,7 +41,8 @@ def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, o
             raise ValueError(f"Invalid pixel_to_cm for {video}: {px}")
         obj_filter = SimpleObjectFilter(
             target_labels=["Broiler"], template_mask=str(Path(__file__).parent / "broiler_template.png"),
-            min_area=500.0, scale_polygon=polygons[video], min_scale_overlap=overlap)
+            min_area=500.0, scale_polygon=polygons[video] if polygons is not None else None,
+            min_scale_overlap=overlap)
         cap = cv2.VideoCapture(str(path))
         try:
             if not cap.isOpened():
