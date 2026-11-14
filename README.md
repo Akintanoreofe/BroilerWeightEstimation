@@ -27,7 +27,7 @@ https://github.com/user-attachments/assets/fe745700-ba96-4303-a332-41783033921b
 ## Features
 
 - **End-to-End Video Pipeline**: Frame ingestion, ROI handling, segmentation, object validation, and weight estimation.
-- **Classical, Learning-Free Segmentation**: HSV-based foreground extraction with morphological refinement.
+- **Classical, Learning-Free Segmentation**: Otsu thresholding of frame brightness, orange-feeder suppression, and morphological refinement.
 - **Robust Object Selection**: Overlap rejection, boundary-touching instance removal, confidence scoring, and configurable Top-K candidate selection.
 - **Pose-Normalized, Density-Aware Weight Estimation**: Orientation normalization + geometry-based volume computation, converted to weight using configurable broiler density (default: 900 kg/m³).
 - **Structured Outputs**: CSV logging and annotated video output for debugging and offline analysis.
@@ -94,15 +94,49 @@ Example configuration:
 ```
 ### Camera Calibration
 
-- Accurate weight estimation requires pixel-to-real-world calibration (pixel_to_cm in `cameras_config.json` file).  
-- In this project, the **Segment Anything Model (SAM)** is used to segment the feeder region from the image, producing a clean, reliable mask of a known reference object.
-- In the current implementation, the pixel-to-centimeter conversion factor is **set manually** based on the segmented feeder dimensions.
-- In commercial farm environments, feeders are well-suited for calibration because their **geometry and physical dimensions are typically fixed and known**. This makes feeder-based calibration a practical, repeatable approach that does not require additional calibration targets.
+- Accurate weight estimation requires pixel-to-real-world calibration. The current implementation detects the orange feeder in the video's first frame, measures its diameter in pixels, and uses the known feeder diameter (35.56 cm) to calculate centimeters per pixel.
+- Feeder detection uses an HSV color range and morphological cleanup. Calibration raises an error if it cannot read the frame, find the feeder, or measure a sufficiently large feeder.
 
 ---
 
 ## Method Overview
-Volume estimation is performed by slicing the segmented broiler mask into vertical cross-sections, each approximated as a cylinder with height proportional to the pixel resolution.
+The entry point calibrates the video from its first frame, then processes each frame independently. It creates a binary foreground mask, selects likely single-broiler contours, and estimates each selected bird's mass from calibrated circular slices through its mask. The diagram shows the implemented classical-segmentation path:
+
+```mermaid
+flowchart TD
+    A([Start]) --> B[Open configured video]
+    B --> C[Read first frame and detect orange feeder]
+    C --> D{Feeder detected<br/>and measurable?}
+    D -- No --> E[Stop with calibration error]
+    D -- Yes --> F[Calculate centimeters per pixel<br/>from known 35.56 cm feeder diameter]
+    F --> G[Read next video frame]
+    G --> H{Frame available<br/>and within limit?}
+    H -- No --> Z[Release resources and finish]
+    H -- Yes --> I[Convert frame to HSV<br/>and blur brightness channel]
+    I --> J[Otsu threshold brightness<br/>and remove orange feeder pixels]
+    J --> K[Clean mask with morphology]
+    K --> L[Find external contours]
+    L --> C1[Process next external contour]
+    C1 --> M{Contour passes area,<br/>size, and border checks?}
+    M -- No --> Y{More contours?}
+    M -- Yes --> N[Distance transform]
+    N --> O{Exactly one peak?}
+    O -- No --> Y
+    O -- Yes --> P[Rotate and align mask]
+    P --> Q[Compare normal and flipped masks<br/>with broiler template]
+    Q --> X[Store candidate scores]
+    X --> Y
+    Y -- Yes --> C1
+    Y -- No --> R[Combine scores and keep<br/>top-K candidates above threshold]
+    R --> S[For each selected candidate:<br/>measure mask height per image column]
+    S --> T[Model each column as a circular slice<br/>using pixel-to-centimeter scale]
+    T --> U[Sum slice volumes and multiply<br/>by assumed density (900 kg/m³)]
+    U --> V[Write estimate to CSV<br/>and annotate frame]
+    V --> W[Write annotated video frame]
+    W --> G
+```
+
+Volume estimation approximates each occupied image column as a cylinder slice: the mask's vertical span gives the slice diameter, and the calibrated pixel scale gives its dimensions in centimeters. Summing slice volumes and multiplying by the assumed broiler density produces the estimated mass in kilograms.
 
 
 <img width="224" height="224" alt="broiler_sliced" src="https://github.com/user-attachments/assets/54cb91df-7abb-4148-bed2-62cd404cd057" />
