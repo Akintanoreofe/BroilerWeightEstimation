@@ -173,6 +173,62 @@ The CSV output contains the following columns:
 
 ### Validate Weight Estimates
 
+#### FlockLabel export and notebook
+
+Install the pipeline and notebook dependencies, start Jupyter from the repository
+root, and open `validation_walkthrough.ipynb`:
+
+```bash
+python -m pip install -r requirements.txt jupyter
+jupyter notebook
+```
+
+Set `EXPORT_DIR` in the first code cell to your export and run all cells. The
+notebook displays a sample frame, calibration, segmentation mask, filtering and
+weight estimates, then processes every clip, reports validation metrics and
+generates comparison videos. The videos show ground-truth boxes in green and
+estimated boxes in red, including unmatched boxes. The first labeled clip is
+embedded in the notebook; all comparisons are saved under
+`<export>/results/comparisons/`. Some browsers may not support OpenCV's MP4
+codec; open the saved video locally if necessary.
+
+The expected export structure is:
+
+```text
+export/
+├── test_videos/
+│   ├── metadata.csv    # video_name
+│   └── <video files listed in metadata>
+└── ground_truth/
+    ├── events.csv      # video_name, optional pixel_to_cm
+    └── gt_boxes.csv    # video_name, frame_idx, x, y, w, h, weight_kg, event_id
+```
+
+Boxes use pixel `(x, y, width, height)` coordinates. The pipeline numbers
+frames starting at 1; set `GT_FRAME_OFFSET = 1` for zero-based ground-truth
+frame numbers, or leave it at 0 for one-based numbers. Video names must have
+unique stems. `events.csv` can supply a positive `pixel_to_cm` per video;
+otherwise calibration requires a detectable orange feeder in the first frame.
+The runner reports calibration failures and exits unsuccessfully if any clip
+was skipped. Existing result files are overwritten.
+
+The same processing and evaluation can be run without Jupyter:
+
+```bash
+python src/run_eval.py /path/to/export
+python src/evaluate_against_gt.py /path/to/export/ground_truth/gt_boxes.csv \
+  --results-dir /path/to/export/results --out /path/to/export/results/evaluation \
+  --gt-frame-offset 0
+```
+
+The evaluator greedily matches boxes by IoU on the same video and frame.
+Estimates on frames without ground-truth labels are counted as unmatched, not
+necessarily confirmed false positives. Event weight metrics use the median
+of matched scale readings and the median estimate. Fit any suggested density
+on separate calibration events and report accuracy on held-out events.
+
+#### CSV weight validation
+
 To compare estimates with measured weights, add an `actual_weight_kg` column to
 the results CSV, with one measured weight in kilograms on each corresponding
 row. The pipeline's estimated weights are in the `volume` column. Then run:
