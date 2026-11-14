@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 import math
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from abc import ABC, abstractmethod
 import cv2
 import numpy as np
+from scale_region import scale_mask_for_frame
 
 
 @dataclass
@@ -28,6 +29,8 @@ class ObjectInfo:
         Object category.
     area : float, default=0.0
         Contour area in pixels.
+    source_mask : numpy.ndarray or None, default=None
+        Unrotated, filled candidate mask cropped to ``crop_region``.
     """
 
     mask: np.ndarray
@@ -37,6 +40,7 @@ class ObjectInfo:
     volume: float = 0.0
     label: str = "broiler"  # default label
     area: float = 0.0
+    source_mask: Optional[np.ndarray] = None
 
 
 class ObjectFilter(ABC):
@@ -67,7 +71,8 @@ class SimpleObjectFilter(ObjectFilter):
     def __init__(self, target_labels: List[str], template_mask: str,
                  min_area: float, min_score: float = 0.0, top_k: int = 3, padding: int = 5,
                  peak_thresh: float = 0.6, alpha: float = 0.4, beta: float = 0.6,
-                 too_small_thresh: int = 3, img_border: int = 1):
+                 too_small_thresh: int = 3, img_border: int = 1,
+                 scale_polygon=None, min_scale_overlap: float = 0.8):
         """Initialize the contour filter and load a grayscale template.
 
         Parameters
@@ -96,6 +101,10 @@ class SimpleObjectFilter(ObjectFilter):
             dimensions divided by this value.
         img_border : int, default=1
             Border margin at which contours are rejected.
+        scale_polygon : sequence of [x, y], optional
+            Manually annotated platform boundary in frame pixels.
+        min_scale_overlap : float, default=0.8
+            Minimum fraction of the filled candidate mask inside the boundary.
         """
 
         self.target_labels = set(target_labels)
@@ -108,6 +117,10 @@ class SimpleObjectFilter(ObjectFilter):
         self.padding = padding
         self.too_small_thresh = too_small_thresh
         self.img_border = img_border
+        if not math.isfinite(min_scale_overlap) or not 0 < min_scale_overlap <= 1:
+            raise ValueError("min_scale_overlap must be in (0, 1]")
+        self.scale_polygon = scale_polygon
+        self.min_scale_overlap = min_scale_overlap
 
         self.template_mask = cv2.imread(template_mask, cv2.IMREAD_GRAYSCALE)
         self.template_mask = self.template_mask.astype("uint8")
@@ -134,6 +147,9 @@ class SimpleObjectFilter(ObjectFilter):
         clean_mask = np.zeros_like(mask)
         single_chicken_masks = []
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        scale_mask = None
+        if self.scale_polygon is not None:
+            scale_mask = scale_mask_for_frame(self.scale_polygon, mask.shape)
 
         for c in contours:
             area = cv2.contourArea(c)
@@ -144,6 +160,10 @@ class SimpleObjectFilter(ObjectFilter):
 
             blob_mask = np.zeros_like(mask)
             cv2.drawContours(blob_mask, [c], -1, 255, -1)
+            if scale_mask is not None:
+                overlap = cv2.countNonZero(cv2.bitwise_and(blob_mask, scale_mask))
+                if overlap / cv2.countNonZero(blob_mask) < self.min_scale_overlap:
+                    continue
             dist = cv2.distanceTransform(blob_mask, cv2.DIST_L2, 5)
             dist_norm = cv2.normalize(dist, None, 0, 1.0, cv2.NORM_MINMAX)
             _, peaks = cv2.threshold(dist_norm, self.peak_thresh, 1.0, cv2.THRESH_BINARY)
@@ -239,7 +259,8 @@ class SimpleObjectFilter(ObjectFilter):
             confidence_dt=confidence_dt,
             confidence_tpl=confidence_tpl,
             crop_region=(x, y, w, h),
-            area=cv2.contourArea(contour)
+            area=cv2.contourArea(contour),
+            source_mask=blob_mask[y:y+h, x:x+w].copy(),
         )
 
     def combine_scores(self, objs_info: List[ObjectInfo]) -> np.ndarray:
