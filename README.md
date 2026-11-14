@@ -104,35 +104,35 @@ The entry point calibrates the video from its first frame, then processes each f
 
 ```mermaid
 flowchart TD
-    A([Start]) --> B[Open configured video]
-    B --> C[Read first frame and detect orange feeder]
-    C --> D{Feeder detected<br/>and measurable?}
-    D -- No --> E[Stop with calibration error]
-    D -- Yes --> F[Calculate centimeters per pixel<br/>from known 35.56 cm feeder diameter]
-    F --> G[Read next video frame]
-    G --> H{Frame available<br/>and within limit?}
-    H -- No --> Z[Release resources and finish]
-    H -- Yes --> I[Convert frame to HSV<br/>and blur brightness channel]
-    I --> J[Otsu threshold brightness<br/>and remove orange feeder pixels]
-    J --> K[Clean mask with morphology]
-    K --> L[Find external contours]
-    L --> C1[Process next external contour]
-    C1 --> M{Contour passes area,<br/>size, and border checks?}
-    M -- No --> Y{More contours?}
-    M -- Yes --> N[Distance transform]
-    N --> O{Exactly one peak?}
+    A(["Start"]) --> B["Open configured video"]
+    B --> C["Read first frame and detect orange feeder"]
+    C --> D{"Feeder detected<br>and measurable?"}
+    D -- No --> E["Stop with calibration error"]
+    D -- Yes --> F["Calculate centimeters per pixel<br>from known 35.56 cm feeder diameter"]
+    F --> G["Read next video frame"]
+    G --> H{"Frame available<br>and within limit?"}
+    H -- No --> Z["Release resources and finish"]
+    H -- Yes --> I["Convert frame to HSV<br>and blur brightness channel"]
+    I --> J["Otsu threshold brightness<br>and remove orange feeder pixels"]
+    J --> K["Clean mask with morphology"]
+    K --> L["Find external contours"]
+    L --> C1["Process next external contour"]
+    C1 --> M{"Contour passes area,<br>size, and border checks?"}
+    M -- No --> Y{"More contours?"}
+    M -- Yes --> N["Distance transform"]
+    N --> O{"Exactly one peak?"}
     O -- No --> Y
-    O -- Yes --> P[Rotate and align mask]
-    P --> Q[Compare normal and flipped masks<br/>with broiler template]
-    Q --> X[Store candidate scores]
+    O -- Yes --> P["Rotate and align mask"]
+    P --> Q["Compare normal and flipped masks<br>with broiler template"]
+    Q --> X["Store candidate scores"]
     X --> Y
     Y -- Yes --> C1
-    Y -- No --> R[Combine scores and keep<br/>top-K candidates above threshold]
-    R --> S[For each selected candidate:<br/>measure mask height per image column]
-    S --> T[Model each column as a circular slice<br/>using pixel-to-centimeter scale]
-    T --> U[Sum slice volumes and multiply<br/>by assumed density (900 kg/m³)]
-    U --> V[Write estimate to CSV<br/>and annotate frame]
-    V --> W[Write annotated video frame]
+    Y -- No --> R["Combine scores and keep<br>top-K candidates above threshold"]
+    R --> S["For each selected candidate:<br>measure mask height per image column"]
+    S --> T["Model each column as a circular slice<br>using pixel-to-centimeter scale"]
+    T --> U["Sum slice volumes and multiply<br>by assumed density (900 kg/m³)"]
+    U --> V["Write estimate to CSV<br>and annotate frame"]
+    V --> W["Write annotated video frame"]
     W --> G
 ```
 
