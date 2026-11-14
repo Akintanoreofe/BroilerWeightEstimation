@@ -16,6 +16,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from AreaCalculatorStrategy import CalibratedAreaCalculator, mask_slice_profile
+from FeederCalibration import calibrate_pixel_to_cm
 from ObjectFilterStrategy import ObjectInfo, SimpleObjectFilter
 from scale_region import scale_mask_for_frame
 from tune_validation import collect_matches, evaluate_grid
@@ -61,6 +62,32 @@ class ScaleValidationTest(unittest.TestCase):
                         [[0.5, 0], [1, 1], [0, 3]]):
             with self.subTest(polygon=polygon), self.assertRaises(ValueError):
                 scale_mask_for_frame(polygon, (10, 10))
+
+    def test_alignment_preserves_complete_birds_near_frame_edges(self):
+        filt = SimpleObjectFilter(["Broiler"], str(ROOT / "src" / "broiler_template.png"), 500)
+        areas, weights = [], []
+        for center_x in (110, 320, 530):
+            mask = np.zeros((240, 640), np.uint8)
+            cv2.ellipse(mask, (center_x, 120), (95, 50), 45, 0, 360, 255, -1)
+            selected, _ = filt.should_process(mask)
+            self.assertEqual(len(selected), 1)
+            bird = selected[0]
+            source_area = cv2.countNonZero(bird.source_mask)
+            aligned_area = cv2.countNonZero(bird.mask)
+            self.assertAlmostEqual(aligned_area / source_area, 1, delta=0.03)
+            areas.append(aligned_area)
+            weights.append(CalibratedAreaCalculator(0.1).volume_from_mask(bird).volume)
+        self.assertEqual(areas, [areas[0]] * len(areas))
+        self.assertEqual(weights, [weights[0]] * len(weights))
+
+    def test_edge_clipped_candidate_is_not_weighed(self):
+        filt = SimpleObjectFilter(["Broiler"], str(ROOT / "src" / "broiler_template.png"), 500)
+        mask = np.zeros((240, 640), np.uint8)
+        cv2.ellipse(mask, (600, 120), (95, 50), 0, 0, 360, 255, -1)
+        self.assertEqual(filt.should_process(mask)[0], [])
+        self.assertEqual(filt.last_rejections["frame_edge"], 1)
+        filt.should_process(np.zeros_like(mask))
+        self.assertEqual(filt.last_rejections["frame_edge"], 0)
 
     def test_slices_preserve_baseline_and_density_scaling(self):
         mask = np.zeros((4, 4), np.uint8)
@@ -133,9 +160,7 @@ class ScaleValidationTest(unittest.TestCase):
         images, displays = [], []
         from Factories import AreaCalculatorFactory, AreaMethod
         namespace = dict(ROOT=ROOT, cv2=cv2, np=np, math=math, mask=mask, frame=frame,
-                         video_name="bird.mp4",
-                         SCALE_POLYGONS={"bird.mp4": [[0, 0], [300, 0], [300, 299], [0, 299]]},
-                         MIN_SCALE_OVERLAP=0.8, SimpleObjectFilter=SimpleObjectFilter,
+                         video_name="bird.mp4", SimpleObjectFilter=SimpleObjectFilter,
                          show_image=lambda image: images.append(image.copy()),
                          display=lambda data: displays.append(data),
                          AreaCalculatorFactory=AreaCalculatorFactory, AreaMethod=AreaMethod,
@@ -214,6 +239,46 @@ class ScaleValidationTest(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             predicted = CalibratedAreaCalculator(matches[0][3], 1000, 5).volume_from_mask(matches[0][2]).volume
             self.assertAlmostEqual(float(rows[0]["volume"]), predicted, places=5)
+
+    def test_cropped_runner_and_tuning_calibrate_from_feeder_without_polygon(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test_videos").mkdir()
+            (root / "ground_truth").mkdir()
+            video = root / "test_videos" / "bird.mp4"
+            writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), 5, (640, 300))
+            self.assertTrue(writer.isOpened())
+            frame = np.zeros((300, 640, 3), np.uint8)
+            cv2.ellipse(frame, (150, 150), (90, 60), 0, 0, 360, (255, 255, 255), -1)
+            cv2.circle(frame, (500, 150), 50, (0, 128, 255), -1)
+            writer.write(frame)
+            writer.release()
+            (root / "test_videos" / "metadata.csv").write_text("video_name\nbird.mp4\n")
+            (root / "ground_truth" / "events.csv").write_text("video_name,pixel_to_cm\nbird.mp4,\n")
+            (root / "ground_truth" / "gt_boxes.csv").write_text(
+                "video_name,frame_idx,x,y,w,h,weight_kg,event_id\nbird.mp4,1,60,90,181,121,2,e\n")
+
+            px = calibrate_pixel_to_cm(str(video))
+            self.assertAlmostEqual(px, 35.56 / 100, delta=0.015)
+            subprocess.run([sys.executable, str(ROOT / "src" / "run_eval.py"), str(root),
+                            "--density", "1000", "--slices", "5"],
+                           check=True, capture_output=True, text=True)
+            with (root / "results" / "bird_results.csv").open(newline="") as fh:
+                rows = list(csv.DictReader(fh))
+            matches = collect_matches(root, None, [{"video_name": "bird.mp4", "pixel_to_cm": ""}],
+                                      0, 0.3, 0.8)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(len(matches), 1)
+            self.assertAlmostEqual(matches[0][3], px)
+            predicted = CalibratedAreaCalculator(px, 1000, 5).volume_from_mask(matches[0][2]).volume
+            self.assertAlmostEqual(float(rows[0]["volume"]), predicted, places=5)
+
+    def test_feeder_calibration_fails_when_feeder_is_not_visible(self):
+        with patch("FeederCalibration.VideoReader") as reader:
+            reader.return_value.read.return_value = (True, np.zeros((100, 100, 3), np.uint8))
+            with self.assertRaisesRegex(RuntimeError, "No orange feeder detected"):
+                calibrate_pixel_to_cm("cropped.mp4")
+            reader.return_value.release.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -184,10 +184,9 @@ python -m pip install -r requirements.txt ipykernel
 
 Open `src/validation_walkthrough.ipynb` in VS Code and select that remote
 Python kernel. Copy the FlockLabel export to the remote machine (for example
-into a `dataset` directory at the repository root). The existing `EXPORT_DIR`
-path in the first code cell is a local Mac path; change it to the remote export
-directory unless that path is mounted in the remote environment, then run all
-cells. Paths on your local computer are not otherwise accessible remotely.
+into a `dataset` directory at the repository root). Set `EXPORT_DIR` in the
+first code cell to the remote export directory, then run all cells. Paths on
+your local computer are not otherwise accessible remotely.
 Relative export paths are resolved from the repository root. The root is
 automatically found when the kernel's working directory is inside the
 repository. Otherwise, set `REPO_ROOT` to the absolute remote path of the
@@ -207,18 +206,16 @@ The slice visualization colors the aligned mask by column group and shows
 the sampled diameters, individual slice volumes, and their total. These
 circular sections are model assumptions, not measured 3D anatomy.
 
-Before running the notebook, set `SCALE_POLYGONS` in its setup cell to the
-corners of the **square weighing platform**, not the orange feeder, for every
-exact exported video filename. Coordinates are `[x, y]` in the exported
-video's pixels, after any crop. Inspect the displayed outline for each clip.
-The notebook refuses to run the full validation without every polygon. The
-platform is manually outlined, not automatically detected. A candidate must
-have at least 80% of its filled, unrotated silhouette inside the outline
-before top-K selection; adjust `MIN_SCALE_OVERLAP` if appropriate. The full,
-unclipped bird silhouette is rotated and used for mass estimation.
-Silhouette overlap does **not** prove that the bird is weight-bearing on the
-scale, and occlusion, multiple birds and segmentation errors can invalidate
-the association with a reading. Review the frames and matches.
+The notebook assumes the clips are already cropped and does not require a
+weighing-platform boundary. It uses the full detected silhouette for mass
+estimation. Cropping does not establish that a bird is weight-bearing on the
+scale; occlusion, multiple birds, edge clipping and segmentation errors can
+invalidate the association with a reading. Review the frames and matches.
+The filter preview reports why contours were rejected before scoring.
+Frame-edge contours are excluded because their complete silhouettes are
+unknown; multiple distance-transform peaks can indicate touching birds, but
+may also arise from irregular segmentation. The report does not count
+candidates excluded by score or top-K selection.
 
 The optional, disabled-by-default tuning cell tries slice counts and densities
 on matched, labeled scale frames. Supply disjoint calibration and held-out
@@ -248,6 +245,11 @@ frames starting at 1; set `GT_FRAME_OFFSET = 1` for zero-based ground-truth
 frame numbers, or leave it at 0 for one-based numbers. Video names must have
 unique stems. `events.csv` can supply a positive `pixel_to_cm` per video;
 otherwise calibration requires a detectable orange feeder in the first frame.
+Its 14-inch (35.56 cm) diameter divided by its measured pixel diameter gives
+centimeters per pixel. The complete feeder must remain visible after cropping
+and other orange objects can distort detection; if it is absent or not
+reliably measurable, supply a valid `pixel_to_cm` measured for the exported video. A crop
+does not change pixel size, but resizing does.
 The runner reports calibration failures and exits unsuccessfully if any clip
 was skipped. Existing result files are overwritten.
 
@@ -262,9 +264,11 @@ python src/evaluate_against_gt.py /path/to/export/ground_truth/gt_boxes.csv \
 
 The CLI retains its original all-bird behavior unless `--scale-polygons
 /path/to/polygons.json` is supplied. The JSON maps each exact video name to
-its polygon points, as in the notebook's `results/scale_polygons.json`. Use
-`--min-scale-overlap`, `--density`, and `--slices` to match notebook settings;
-pass the same density to the evaluator with `--density`.
+its polygon points, for example `{"clip.mp4": [[30, 45], [420, 40],
+[430, 430], [35, 430]]}`. Use
+`--min-scale-overlap` to configure the optional filter, and `--density` and
+`--slices` to match notebook settings; pass the same density to the evaluator
+with `--density`.
 
 The evaluator greedily matches boxes by IoU on the same video and frame.
 Estimates on frames without ground-truth labels are counted as unmatched, not
