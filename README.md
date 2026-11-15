@@ -53,7 +53,9 @@ Cross-sections are `circular`, `elliptical`, or `profile`. Each video's
 frames, including quality metrics, slice widths (JSON), volume in cm³, and
 estimated weight in kg. Calibration requires at least five usable sampled
 feeder fits. `src/defaults.py` contains global physical and ratio defaults;
-`PLANE_CORRECTION` defaults to 1.0.
+`PLANE_CORRECTION` defaults to 1.0. Install `requirements-visualization.txt`
+for the walkthrough notebook and optional slice-figure debug PNGs (enabled
+with `--debug-every N`).
 
 ---
 

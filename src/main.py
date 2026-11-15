@@ -52,14 +52,16 @@ def _cross_section(name: str):
 def _debug_overlay(frame, feeder_reference, candidate, result, destination):
     rectified_frame = feeder_reference.rectify(frame)
     rectified_mask = feeder_reference.rectify(candidate.mask, is_mask=True)
-    contours, _ = cv2.findContours(rectified_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    if contours:
-        cv2.drawContours(rectified_frame, contours, -1, (0, 255, 0), 2)
-    cv2.putText(rectified_frame, f"V={result.volume_cm3:.1f} cm3; "
-                f"W={result.weight_kg_est:.3f} kg",
-                (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-    if not cv2.imwrite(str(destination), rectified_frame):
-        raise RuntimeError(f"Could not write debug image: {destination}")
+    import matplotlib.pyplot as plt
+    import visualize
+
+    figure = visualize.plot_slices(
+        rectified_frame, rectified_mask, result, feeder_reference.px_per_cm
+    )
+    try:
+        figure.savefig(str(destination), dpi=120)
+    finally:
+        plt.close(figure)
 
 
 def process_video(

@@ -110,6 +110,7 @@ class SliceVolumeResult:
     n_slices: int
     aligned_mask: np.ndarray
     slice_positions_px: np.ndarray
+    alignment_matrix: np.ndarray
     cross_section: str
     k: Optional[float]
     weight_kg_est: Optional[float] = None
@@ -136,10 +137,10 @@ class SliceVolumeEstimator:
         """Align, slice, and integrate a binary mask in physical units."""
         if not math.isfinite(px_per_cm) or px_per_cm <= 0:
             raise ValueError("px_per_cm must be positive and finite")
-        aligned = self._align_mask(bird_mask)
+        aligned, alignment_matrix = self._align_mask(bird_mask)
         contours, _ = cv2.findContours(aligned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if not contours:
-            return self._empty_result(aligned)
+            return self._empty_result(aligned, alignment_matrix)
         contour = max(contours, key=cv2.contourArea)
         polygon = contour[:, 0, :].astype(np.float64)
         if self.smoothing_strength:
@@ -149,7 +150,7 @@ class SliceVolumeEstimator:
         x_max = float(polygon[:, 0].max())
         length_px = x_max - x_min
         if length_px <= 0:
-            return self._empty_result(aligned)
+            return self._empty_result(aligned, alignment_matrix)
         n_slices = self.n_slices or max(1, int(np.count_nonzero(aligned.any(axis=0))))
         n_slices = min(n_slices, max(1, int(math.ceil(length_px))))
         delta_x_px = length_px / n_slices
@@ -180,17 +181,18 @@ class SliceVolumeEstimator:
             n_slices=n_slices,
             aligned_mask=aligned,
             slice_positions_px=positions,
+            alignment_matrix=alignment_matrix,
             cross_section=type(self.cross_section).__name__,
             k=getattr(self.cross_section, "k", None),
             weight_kg_est=weight,
         )
 
     @staticmethod
-    def _align_mask(mask: np.ndarray) -> np.ndarray:
+    def _align_mask(mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         binary = (mask > 0).astype(np.uint8) * 255
         ys, xs = np.where(binary > 0)
         if len(xs) == 0:
-            return binary
+            return binary, np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
         x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
         cropped = binary[y0:y1 + 1, x0:x1 + 1]
         ys, xs = np.where(cropped > 0)
@@ -212,7 +214,11 @@ class SliceVolumeEstimator:
                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0)
         rotated = (rotated > 0).astype(np.uint8) * 255
         ys, xs = np.where(rotated > 0)
-        return rotated[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        x_min, y_min = int(xs.min()), int(ys.min())
+        aligned = rotated[y_min:ys.max() + 1, x_min:xs.max() + 1]
+        matrix[:, 2] -= np.asarray([x_min, y_min])
+        matrix[:, 2] -= matrix[:, :2] @ np.asarray([x0, y0], dtype=np.float64)
+        return aligned, matrix
 
     @staticmethod
     def _polygon_width(polygon: np.ndarray, x_position: float) -> float:
@@ -236,12 +242,13 @@ class SliceVolumeEstimator:
             result[:, axis] = np.fft.irfft(spectrum, n=len(polygon))
         return result
 
-    def _empty_result(self, aligned: np.ndarray) -> SliceVolumeResult:
+    def _empty_result(self, aligned: np.ndarray, alignment_matrix: np.ndarray) -> SliceVolumeResult:
         return SliceVolumeResult(
             volume_cm3=0.0, length_cm=0.0, max_width_cm=0.0, area_cm2=0.0,
             perimeter_cm=0.0, slice_widths_cm=[], slice_volumes_cm3=[],
             delta_x_cm=0.0, n_slices=0, aligned_mask=aligned,
-            slice_positions_px=np.array([]), cross_section=type(self.cross_section).__name__,
+            slice_positions_px=np.array([]), alignment_matrix=alignment_matrix,
+            cross_section=type(self.cross_section).__name__,
             k=getattr(self.cross_section, "k", None),
             weight_kg_est=(self.weight_model.estimate_weight_kg(0.0)
                            if self.weight_model is not None else None),
