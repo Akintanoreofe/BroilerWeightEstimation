@@ -276,7 +276,11 @@ class ScaleValidationTest(unittest.TestCase):
             frame = np.zeros((300, 640, 3), np.uint8)
             cv2.ellipse(frame, (150, 150), (90, 60), 0, 0, 360, (255, 255, 255), -1)
             cv2.circle(frame, (500, 150), 50, (0, 128, 255), -1)
+            feeder_only = np.zeros_like(frame)
+            cv2.circle(feeder_only, (500, 150), 50, (0, 128, 255), -1)
             writer.write(frame)
+            for _ in range(4):
+                writer.write(feeder_only)
             writer.release()
             (root / "test_videos" / "metadata.csv").write_text("video_name\nbird.mp4\n")
             (root / "ground_truth" / "events.csv").write_text("video_name,pixel_to_cm\nbird.mp4,\n")
@@ -299,11 +303,10 @@ class ScaleValidationTest(unittest.TestCase):
             self.assertAlmostEqual(float(rows[0]["volume"]), predicted, places=5)
 
     def test_feeder_calibration_fails_when_feeder_is_not_visible(self):
-        with patch("FeederCalibration.VideoReader") as reader:
-            reader.return_value.read.return_value = (True, np.zeros((100, 100, 3), np.uint8))
+        with patch("FeederCalibration.FeederReference.from_video",
+                   side_effect=RuntimeError("Feeder calibration found only 0 good fits")):
             with self.assertRaisesRegex(RuntimeError, "No orange feeder detected"):
                 calibrate_pixel_to_cm("cropped.mp4")
-            reader.return_value.release.assert_called_once()
 
 
 if __name__ == "__main__":
