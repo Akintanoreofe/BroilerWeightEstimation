@@ -1,7 +1,12 @@
 """Factories and enumerations for pipeline strategy selection."""
 
 from enum import Enum
-from SegmentationStrategy import Segmenter, ClassicalSegmenter, DeepLearningSegmenter
+from SegmentationStrategy import (
+    Segmenter,
+    ClassicalSegmenter,
+    DeepLearningSegmenter,
+    TwoStageOtsuSegmenter,
+)
 from AreaCalculatorStrategy import AreaCalculator, PixelAreaCalculator, CalibratedAreaCalculator
 
 
@@ -10,6 +15,7 @@ class SegmentationMethod(Enum):
 
     DEEP = "deep"
     CLASSICAL = "classical"
+    OTSU2 = "otsu2"
 
 
 class AreaMethod(Enum):
@@ -47,6 +53,11 @@ class SegmenterFactory:
             return DeepLearningSegmenter(model_path=kwargs.get("model_path", "model.onnx"))
         elif method == SegmentationMethod.CLASSICAL:
             return ClassicalSegmenter()
+        elif method == SegmentationMethod.OTSU2:
+            feeder_reference = kwargs.get("feeder_reference")
+            if feeder_reference is None:
+                raise ValueError("feeder_reference is required for OTSU2 segmentation")
+            return TwoStageOtsuSegmenter(feeder_reference=feeder_reference)
         else:
             raise ValueError(f"Unknown segmentation method: {method}")
 

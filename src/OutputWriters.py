@@ -3,6 +3,17 @@
 from typing import Optional
 from abc import ABC, abstractmethod
 import csv
+import json
+
+
+FEATURE_CSV_FIELDS = (
+    "video_name", "recording_date", "frame_idx", "timestamp_s", "segmenter",
+    "track_id", "measurable", "feeder_contact", "occluder_contact", "solidity",
+    "ellipse_aspect", "sharpness", "dist_feeder_radii", "area_cm2", "length_cm",
+    "max_width_cm", "perimeter_cm", "volume_cm3", "n_slices", "cross_section",
+    "k", "px_per_cm", "feeder_major_px", "feeder_minor_px",
+    "calib_uncertainty_pct", "slice_widths_cm", "weight_kg_est",
+)
 
 
 class OutputWriter(ABC):
@@ -57,3 +68,29 @@ class CSVOutputWriter(OutputWriter):
         """Close the CSV file and report its destination."""
         self.csv_file.close()
         print(f"[CSVOutputWriter] Saved results to {self.csv_path}")
+
+
+class FeatureCSVWriter(OutputWriter):
+    """Write one validation feature row per selected bird and frame."""
+
+    def __init__(self, csv_path: str):
+        self.csv_path = csv_path
+        self.csv_file = open(csv_path, "w", newline="", encoding="utf-8")
+        self.writer = csv.DictWriter(self.csv_file, fieldnames=FEATURE_CSV_FIELDS)
+        self.writer.writeheader()
+
+    def write(self, record: dict):
+        row = dict(record)
+        widths = row.get("slice_widths_cm")
+        if widths is not None and not isinstance(widths, str):
+            row["slice_widths_cm"] = json.dumps(widths)
+        self.writer.writerow(row)
+
+    def close(self):
+        self.csv_file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        self.close()

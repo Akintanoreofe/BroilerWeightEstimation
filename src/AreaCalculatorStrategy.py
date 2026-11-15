@@ -112,7 +112,7 @@ class CalibratedAreaCalculator(AreaCalculator):
         Returns
         -------
         ObjectInfo
-            The same object, with ``volume`` set to the estimated mass in kg.
+            The same object, with ``volume_cm3`` and ``weight_kg`` updated.
             An empty mask produces a volume of ``0.0``.
         """
 
@@ -120,7 +120,8 @@ class CalibratedAreaCalculator(AreaCalculator):
         mask_bool = mask > 0
 
         if not mask_bool.any():
-            obj.volume = 0.0
+            obj.volume_cm3 = 0.0
+            obj.weight_kg = 0.0
             return obj
 
         profile = mask_slice_profile(mask, self.slice_count)
@@ -131,6 +132,7 @@ class CalibratedAreaCalculator(AreaCalculator):
         V = float(np.pi * np.sum(radius ** 2 * slice_widths) * self.pixel_to_cm)
 
         # Convert cm³ to m³ before multiplying by density (kg/m³) to obtain mass in kg.
-        obj.volume = (V / 1_000_000) * self.density
+        obj.volume_cm3 = V
+        obj.weight_kg = (V / 1_000_000) * self.density
 
         return obj
