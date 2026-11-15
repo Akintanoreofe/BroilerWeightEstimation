@@ -80,6 +80,31 @@ class ScaleValidationTest(unittest.TestCase):
         self.assertEqual(areas, [areas[0]] * len(areas))
         self.assertEqual(weights, [weights[0]] * len(weights))
 
+    def test_pca_alignment_preserves_area_for_rotated_ellipses(self):
+        filt = SimpleObjectFilter(["Broiler"], str(ROOT / "src" / "broiler_template.png"), 500)
+        for angle in (0, 30, 90, 135):
+            with self.subTest(angle=angle):
+                mask = np.zeros((500, 500), np.uint8)
+                cv2.ellipse(mask, (42, 250), (100, 45), angle, 0, 360, 255, -1)
+                source_area = cv2.countNonZero(mask)
+                aligned = filt.align_mask_by_affine(mask)
+                aligned_area = cv2.countNonZero(aligned)
+                self.assertLessEqual(abs(aligned_area / source_area - 1), 0.01)
+                self.assertEqual(set(np.unique(aligned)), {0, 255})
+                aligned_angle = filt.object_angle(aligned)
+                self.assertLess(min(abs(aligned_angle), abs(abs(aligned_angle) - 180)), 1.0)
+
+    def test_object_info_volume_alias_and_explicit_units(self):
+        bird = obj(np.ones((4, 4), np.uint8))
+        CalibratedAreaCalculator(0.1).volume_from_mask(bird)
+        self.assertGreater(bird.volume_cm3, 0)
+        self.assertGreater(bird.weight_kg, 0)
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(bird.volume, bird.weight_kg)
+        with self.assertWarns(DeprecationWarning):
+            bird.volume = 2.5
+        self.assertEqual(bird.weight_kg, 2.5)
+
     def test_edge_clipped_candidate_is_not_weighed(self):
         filt = SimpleObjectFilter(["Broiler"], str(ROOT / "src" / "broiler_template.png"), 500)
         mask = np.zeros((240, 640), np.uint8)

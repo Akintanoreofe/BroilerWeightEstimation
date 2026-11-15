@@ -102,7 +102,7 @@ class VideoProcessor:
 
                 obj = self.area_calculator.volume_from_mask(obj)
                 x, y, w, h = obj.crop_region
-                volume = obj.volume
+                volume = obj.weight_kg
 
                 cx = x + w // 2
                 cy = y + h // 2

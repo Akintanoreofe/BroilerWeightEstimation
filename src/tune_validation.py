@@ -88,7 +88,7 @@ def evaluate_grid(matches, train_ids, test_ids, slice_counts, densities):
             groups = defaultdict(list)
             for event, actual, obj, px in matches:
                 if event in train_ids or event in test_ids:
-                    estimate = CalibratedAreaCalculator(px, density, slices).volume_from_mask(obj).volume
+                    estimate = CalibratedAreaCalculator(px, density, slices).volume_from_mask(obj).weight_kg
                     groups[event].append((actual, estimate))
 
             def metrics(ids):

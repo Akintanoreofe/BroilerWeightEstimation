@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import math
+import warnings
 from typing import List, Optional, Tuple
 from abc import ABC, abstractmethod
 import cv2
@@ -23,8 +24,10 @@ class ObjectInfo:
         Confidence from comparison with the template mask.
     crop_region : tuple of int
         Object bounding rectangle as ``(x, y, width, height)``.
-    volume : float, default=0.0
-        Estimated object mass or volume, as assigned by a calculator.
+    volume_cm3 : float, default=0.0
+        Estimated physical volume in cubic centimeters.
+    weight_kg : float, default=0.0
+        Estimated mass in kilograms.
     label : str, default="broiler"
         Object category.
     area : float, default=0.0
@@ -37,10 +40,24 @@ class ObjectInfo:
     confidence_dt: float
     confidence_tpl: float
     crop_region: Tuple[int, int, int, int]  # (x, y, w, h)
-    volume: float = 0.0
+    volume_cm3: float = 0.0
+    weight_kg: float = 0.0
     label: str = "broiler"  # default label
     area: float = 0.0
     source_mask: Optional[np.ndarray] = None
+
+    @property
+    def volume(self) -> float:
+        """Deprecated alias for the estimated mass in kilograms."""
+        warnings.warn("ObjectInfo.volume is deprecated; use weight_kg",
+                      DeprecationWarning, stacklevel=2)
+        return self.weight_kg
+
+    @volume.setter
+    def volume(self, value: float) -> None:
+        warnings.warn("ObjectInfo.volume is deprecated; use weight_kg",
+                      DeprecationWarning, stacklevel=2)
+        self.weight_kg = value
 
 
 class ObjectFilter(ABC):
@@ -356,22 +373,30 @@ class SimpleObjectFilter(ObjectFilter):
             return None
 
         x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
-        obj = crop[y:y+h, x:x+w]
+        obj = (crop[y:y+h, x:x+w] > 0).astype(np.uint8) * 255
         mean_ang = self.object_angle(obj)
-        side = int(math.ceil(math.hypot(w, h))) + 2
-        canvas = np.zeros((side, side), dtype=crop.dtype)
-        x_offset, y_offset = (side - w) // 2, (side - h) // 2
-        canvas[y_offset:y_offset+h, x_offset:x_offset+w] = obj
-        center = (side / 2.0, side / 2.0)
-        matrix = cv2.getRotationMatrix2D(center, mean_ang, 1)
-        rotated = cv2.warpAffine(canvas, matrix, (side, side), flags=cv2.INTER_NEAREST,
+        ys, xs = np.where(obj > 0)
+        center = (float(xs.mean()), float(ys.mean()))
+        matrix = cv2.getRotationMatrix2D(center, mean_ang, 1.0)
+
+        corners = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+        rotated_corners = cv2.transform(corners[None, :, :], matrix)[0]
+        min_x, min_y = rotated_corners.min(axis=0)
+        max_x, max_y = rotated_corners.max(axis=0)
+        out_w = max(1, int(math.ceil(max_x - min_x)))
+        out_h = max(1, int(math.ceil(max_y - min_y)))
+        matrix[0, 2] -= min_x
+        matrix[1, 2] -= min_y
+        rotated = cv2.warpAffine(obj, matrix, (out_w, out_h),
+                                 flags=cv2.INTER_NEAREST,
                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        rotated = (rotated > 0).astype(np.uint8) * 255
         contours, _ = cv2.findContours(rotated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
         x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
-        aligned = rotated[y:y+h, x:x+w]
+        aligned = (rotated[y:y+h, x:x+w] > 0).astype(np.uint8) * 255
         side = max(w, h) + 2 * self.padding
         result = np.zeros((side, side), dtype=crop.dtype)
         x_offset, y_offset = (side - w) // 2, (side - h) // 2
@@ -393,63 +418,8 @@ class SimpleObjectFilter(ObjectFilter):
             input produces an empty mask with the input shape.
         """
 
-        H, W = mask.shape[:2]
         mean_ang = self.object_angle(mask)
-
-        mask_bool = mask > 0
-
-        if not mask_bool.any():
-            return np.zeros_like(mask, dtype=mask.dtype)
-
-        ys, xs = np.where(mask_bool)
-
-        cx = xs.mean()
-        cy = ys.mean()
-
-        theta = np.deg2rad(-mean_ang)
-
-        cos_t = np.cos(theta)
-        sin_t = np.sin(theta)
-
-        x_shift = xs - cx
-        y_shift = ys - cy
-
-        x_rot = cos_t * x_shift - sin_t * y_shift
-        y_rot = sin_t * x_shift + cos_t * y_shift
-
-        x_rot_min = x_rot.min()
-        y_rot_min = y_rot.min()
-
-        x_rot_shifted = x_rot - x_rot_min
-        y_rot_shifted = y_rot - y_rot_min
-
-        x_new = np.rint(x_rot_shifted).astype(int)
-        y_new = np.rint(y_rot_shifted).astype(int)
-
-        new_w = x_new.max() + 1
-        new_h = y_new.max() + 1
-
-        rotated_mask = np.zeros((new_h, new_w), dtype=mask.dtype)
-        fg_value = mask.max()
-        rotated_mask[y_new, x_new] = fg_value
-
-        contours, _ = cv2.findContours(rotated_mask, cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
-        filled = np.zeros_like(rotated_mask)
-        cv2.drawContours(filled, contours, -1, 255, thickness=cv2.FILLED)
-
-        rotated_bool = filled > 0
-        if not rotated_bool.any():
-            return filled
-
-        ys2, xs2 = np.where(rotated_bool)
-        y_min, y_max = ys2.min(), ys2.max()
-        x_min, x_max = xs2.min(), xs2.max()
-
-        x_min, y_min, w, h = self.get_square_bbox(x_min, y_min, x_max-x_min, y_max-y_min, H, W)
-        rotated_cropped = filled[y_min:y_min+h, x_min:x_min+w]
-
-        return rotated_cropped
+        return self.align_mask_by_affine(mask) if np.any(mask) else np.zeros_like(mask)
 
     def object_angle(self, mask: np.ndarray) -> float:
         """Estimate the dominant contour orientation in degrees.
@@ -466,34 +436,16 @@ class SimpleObjectFilter(ObjectFilter):
             usable contours are found.
         """
 
-        threshed = cv2.threshold(mask, 0, 255, cv2.THRESH_OTSU)[1]
-        threshed = cv2.morphologyEx(threshed, cv2.MORPH_CLOSE, np.ones((1, 10)))
-        contours = cv2.findContours(threshed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]
-
-        if not contours:
+        ys, xs = np.where(mask > 0)
+        if len(xs) < 2:
             return 0.0
-
-        angles = []
-
-        for c in contours:
-            if len(c) < 2:
-                continue
-            line = cv2.fitLine(c, cv2.DIST_L2, 0, 0.01, 0.01)
-            vx, vy = line[0].item(), line[1].item()
-            ang = (180/np.pi)*math.atan2(vy, vx)
-            angles.append(ang)
-
-        if not angles:
-            return 0.0
-
-        angles = np.array(angles)
-        lo_val, up_val = np.percentile(angles, (40, 60))
-        filtered = angles[(angles >= lo_val) & (angles <= up_val)]
-
-        if len(filtered) == 0:
-            return float(np.mean(angles))
-
-        return float(np.mean(filtered))
+        coords = np.column_stack((xs, ys)).astype(np.float64)
+        coords -= coords.mean(axis=0)
+        covariance = coords.T @ coords
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        axis = eigenvectors[:, int(np.argmax(eigenvalues))]
+        angle = math.degrees(math.atan2(axis[1], axis[0]))
+        return float((angle + 90.0) % 180.0 - 90.0)
 
     def cosine_scores(self, crop_mask: np.ndarray, template_vector: np.ndarray) -> float:
         """Compute cosine similarity between a resized mask and template.
