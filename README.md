@@ -26,12 +26,34 @@ https://github.com/user-attachments/assets/fe745700-ba96-4303-a332-41783033921b
 
 ## Features
 
-- **End-to-End Video Pipeline**: Frame ingestion, ROI handling, segmentation, object validation, and weight estimation.
-- **Classical, Learning-Free Segmentation**: Otsu thresholding of frame brightness, orange-feeder suppression, and morphological refinement.
+- **End-to-End Video Pipeline**: Per-video feeder calibration, segmentation, object validation, and outline-based volume estimation.
+- **Classical, Learning-Free Segmentation**: Two-stage Otsu on Lab whiteness, with the original V-channel segmenter retained as a baseline.
 - **Robust Object Selection**: Overlap rejection, boundary-touching instance removal, confidence scoring, and configurable Top-K candidate selection.
 - **Pose-Normalized, Density-Aware Weight Estimation**: Orientation normalization + geometry-based volume computation, converted to weight using configurable broiler density (default: 900 kg/m³).
 - **Structured Outputs**: CSV logging and annotated video output for debugging and offline analysis.
 - **Modular Architecture**: Strategy and Factory patterns enabling extensibility and future DL integration.
+
+## Camera-agnostic pipeline
+
+The current pipeline calibrates each video from the orange feeder (14 in /
+35.56 cm), performs two-stage Otsu segmentation in Lab whiteness, rectifies the
+feeder ellipse, and estimates outline volume in equal slices. It does not read
+camera IDs, `cameras_config.json`, hand-drawn ROIs, or scene masks. The
+`classical` segmenter remains available as a baseline.
+
+```bash
+python src/main.py --video PATH_OR_DIR --segmenter otsu2 --n-slices 20 \
+  --cross-section circular --out results/
+```
+
+`--video` accepts one video or a directory of videos; use `--segmenter
+classical` to compare against the original V-channel implementation.
+Cross-sections are `circular`, `elliptical`, or `profile`. Each video's
+`*_features.csv` preserves per-frame measurements and rejected selected-bird
+frames, including quality metrics, slice widths (JSON), volume in cm³, and
+estimated weight in kg. Calibration requires at least five usable sampled
+feeder fits. `src/defaults.py` contains global physical and ratio defaults;
+`PLANE_CORRECTION` defaults to 1.0.
 
 ---
 
@@ -39,7 +61,11 @@ https://github.com/user-attachments/assets/fe745700-ba96-4303-a332-41783033921b
 
 ```
 ├── src
-    ├── main execution.py          # Main entry point
+    ├── main.py                    # Camera-agnostic CLI
+    ├── FeederReference.py         # Multi-frame feeder ellipse calibration
+    ├── BirdSelection.py           # Feeder-relative selection and quality gates
+    ├── SliceVolumeEstimator.py    # Outline-based volume strategies
+    ├── main execution.py          # Legacy entry point
     ├── VideoProcessorPipeline.py  # Core video processing pipeline
     ├── CameraLoader.py           # Camera configuration loader
     ├── SegmentationStrategy.py   # Segmentation implementations (Classical/Deep Learning)
@@ -48,7 +74,8 @@ https://github.com/user-attachments/assets/fe745700-ba96-4303-a332-41783033921b
     ├── OutputWriters.py          # Output formatters (CSV)
     ├── Factories.py              # Factory classes for strategy creation
     ├── VideoIOClass.py           # Video input/output utilities
-    ├── cameras_config.json       # Camera configuration file
+    ├── defaults.py                # Global unit-suffixed defaults
+    ├── cameras_config.json       # Optional legacy configuration
     ├── broiler_template.png      # Template mask for broiler matching
     └── cam1.mp4                  # Sample video file
 ├── requirements.txt
@@ -60,7 +87,7 @@ https://github.com/user-attachments/assets/fe745700-ba96-4303-a332-41783033921b
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.9+
 - OpenCV 4.x
 - NumPy
 
@@ -71,9 +98,11 @@ pip install opencv-python numpy
 ```
 ---
 
-## Configuration
+## Legacy configuration
 
-The system is configured via `cameras_config.json`. Each camera entry defines:
+The older `main execution.py` and validation runner accept camera/polygon
+configuration for backwards compatibility. The camera-agnostic `src/main.py`
+above does not consume `cameras_config.json`. Legacy camera entries may define:
 
 - `crop`: Region of interest coordinates (x1, y1, x2, y2).
 - `feeder`: Feeder area coordinates (for calibration).
@@ -92,14 +121,13 @@ Example configuration:
   }
 }
 ```
-### Camera Calibration
+### Legacy camera calibration
 
-- Accurate weight estimation requires pixel-to-real-world calibration. The current implementation detects the orange feeder in the video's first frame, measures its diameter in pixels, and uses the known feeder diameter (35.56 cm) to calculate centimeters per pixel.
-- Feeder detection uses an HSV color range and morphological cleanup. Calibration raises an error if it cannot read the frame, find the feeder, or measure a sufficiently large feeder.
+- The legacy runner detects the feeder in the first frame and uses an enclosing circle. The current `FeederReference` instead fits ellipses across sampled video frames and reports calibration uncertainty.
 
 ---
 
-## Method Overview
+## Legacy method overview
 The entry point calibrates the video from its first frame, then processes each frame independently. It creates a binary foreground mask, selects likely single-broiler contours, and estimates each selected bird's mass from calibrated circular slices through its mask. The diagram shows the implemented classical-segmentation path:
 
 ```mermaid
@@ -144,7 +172,7 @@ Volume estimation approximates each occupied image column as a cylinder slice: t
 
 ---
 
-## Usage
+## Legacy usage
 
 1. Configure camera parameters in `cameras_config.json`.
 2. Place input video files in the project directory.
@@ -296,9 +324,9 @@ names, use `--actual-column` and `--estimated-column`.
 ## Known Tradeoffs
 **These are deliberate design choices aimed at reliability, transparency, and low deployment cost.**
 
-- **Simplified Body Model:** Weight estimation is based on a cylindrical body assumption to ensure computational efficiency and interpretability.
+- **Simplified Body Model:** The volume strategies approximate 3D cross-sections from a 2D silhouette; validate these assumptions against scale weights.
 - **Lighting Sensitivity:** Classical segmentation performs best under controlled illumination, which is a common constraint in commercial poultry houses.
-- **Manual Calibration:** Pixel-to-centimeter calibration is currently configured on a per-camera basis to maintain measurement accuracy.
+- **Plane Correction:** The feeder rim and bird outline can be at different heights; the global `PLANE_CORRECTION` defaults to 1.0 and requires measured weights for tuning.
 - **Template Dependency:** Shape-based validation relies on orientation-consistent templates, prioritizing precision over recall.
 
 ---
