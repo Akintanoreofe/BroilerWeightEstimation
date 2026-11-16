@@ -89,7 +89,8 @@ class SimpleObjectFilter(ObjectFilter):
                  min_area: float, min_score: float = 0.0, top_k: int = 3, padding: int = 5,
                  peak_thresh: float = 0.6, alpha: float = 0.4, beta: float = 0.6,
                  too_small_thresh: int = 3, img_border: int = 1,
-                 scale_polygon=None, min_scale_overlap: float = 0.8):
+                 scale_polygon=None, min_scale_overlap: float = 0.8,
+                 reject_frame_edge: bool = True):
         """Initialize the contour filter and load a grayscale template.
 
         Parameters
@@ -122,6 +123,8 @@ class SimpleObjectFilter(ObjectFilter):
             Manually annotated platform boundary in frame pixels.
         min_scale_overlap : float, default=0.8
             Minimum fraction of the filled candidate mask inside the boundary.
+        reject_frame_edge : bool, default=True
+            Reject contours touching the frame border or its margin.
         """
 
         self.target_labels = set(target_labels)
@@ -134,6 +137,7 @@ class SimpleObjectFilter(ObjectFilter):
         self.padding = padding
         self.too_small_thresh = too_small_thresh
         self.img_border = img_border
+        self.reject_frame_edge = reject_frame_edge
         self.last_rejections = {}
         if not math.isfinite(min_scale_overlap) or not 0 < min_scale_overlap <= 1:
             raise ValueError("min_scale_overlap must be in (0, 1]")
@@ -249,7 +253,7 @@ class SimpleObjectFilter(ObjectFilter):
 
         if area < self.min_area or too_small_h or too_small_w:
             return "size"
-        if touches_border:
+        if self.reject_frame_edge and touches_border:
             return "frame_edge"
         return None
     

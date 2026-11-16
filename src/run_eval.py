@@ -27,6 +27,8 @@ def main():
     p.add_argument("--min-scale-overlap", type=float, default=0.8)
     p.add_argument("--density", type=float, default=900.0, help="kg/m3")
     p.add_argument("--slices", type=int, help="number of slices; default is one per occupied column")
+    p.add_argument("--allow-frame-edge", action="store_true",
+                   help="allow contours touching the frame edge")
     a = p.parse_args()
     out = a.out or a.export_dir / "results"
     out.mkdir(parents=True, exist_ok=True)
@@ -86,7 +88,8 @@ def main():
             obj_filter=SimpleObjectFilter(target_labels=["Broiler"],
                                           template_mask=str(Path(__file__).resolve().parent / "broiler_template.png"),
                                           min_area=500.0, scale_polygon=polygons[name] if polygons is not None else None,
-                                          min_scale_overlap=a.min_scale_overlap),
+                                          min_scale_overlap=a.min_scale_overlap,
+                                          reject_frame_edge=not a.allow_frame_edge),
             output_writer=CSVOutputWriter(str(out / f"{stem}_results.csv")),
             show_img=False,
         ).run()

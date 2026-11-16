@@ -14,7 +14,8 @@ from SegmentationStrategy import ClassicalSegmenter
 from evaluate_against_gt import iou, load_gt
 
 
-def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, overlap=0.8):
+def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, overlap=0.8,
+                    reject_frame_edge=True):
     """Re-segment labeled frames and retain full masks matched to scale readings.
 
     Pass polygons=None for already-cropped clips without a platform filter.
@@ -42,7 +43,7 @@ def collect_matches(export_dir, polygons, events, frame_offset, iou_threshold, o
         obj_filter = SimpleObjectFilter(
             target_labels=["Broiler"], template_mask=str(Path(__file__).parent / "broiler_template.png"),
             min_area=500.0, scale_polygon=polygons[video] if polygons is not None else None,
-            min_scale_overlap=overlap)
+            min_scale_overlap=overlap, reject_frame_edge=reject_frame_edge)
         cap = cv2.VideoCapture(str(path))
         try:
             if not cap.isOpened():
