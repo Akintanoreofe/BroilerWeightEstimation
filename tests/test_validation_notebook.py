@@ -26,11 +26,16 @@ class ValidationNotebookTest(unittest.TestCase):
 
             namespace = dict(ROOT=ROOT, EXPORT_DIR=Path(tmp), RESULTS_DIR=results,
                              sys=sys, csv=csv, Path=Path, DENSITY=900, SLICE_COUNT=None,
+                             ALLOW_FRAME_EDGE=True,
                              names=["bird.mp4"], run_command=run_command, display=lambda rows: None)
             exec(code, namespace)
             self.assertEqual(len(commands), 1)
             self.assertNotIn("--scale-polygons", commands[0])
             self.assertNotIn("--min-scale-overlap", commands[0])
+            self.assertIn("--allow-frame-edge", commands[0])
+            namespace["ALLOW_FRAME_EDGE"] = False
+            exec(code, namespace)
+            self.assertNotIn("--allow-frame-edge", commands[-1])
 
     def test_repository_discovery_and_override(self):
         notebook = json.loads((ROOT / "src" / "validation_walkthrough.ipynb").read_text())

@@ -114,6 +114,18 @@ class ScaleValidationTest(unittest.TestCase):
         filt.should_process(np.zeros_like(mask))
         self.assertEqual(filt.last_rejections["frame_edge"], 0)
 
+    def test_frame_edge_can_be_allowed_without_disabling_size_filter(self):
+        filt = SimpleObjectFilter(["Broiler"], str(ROOT / "src" / "broiler_template.png"),
+                                  500, reject_frame_edge=False)
+        mask = np.zeros((240, 640), np.uint8)
+        cv2.ellipse(mask, (600, 120), (95, 50), 0, 0, 360, 255, -1)
+        cv2.rectangle(mask, (20, 20), (30, 30), 255, -1)
+        selected, _ = filt.should_process(mask)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0].crop_region[0] + selected[0].crop_region[2], 640)
+        self.assertEqual(filt.last_rejections["frame_edge"], 0)
+        self.assertEqual(filt.last_rejections["size"], 1)
+
     def test_slices_preserve_baseline_and_density_scaling(self):
         mask = np.zeros((4, 4), np.uint8)
         mask[:2, :2] = 255
@@ -189,7 +201,7 @@ class ScaleValidationTest(unittest.TestCase):
                          show_image=lambda image: images.append(image.copy()),
                          display=lambda data: displays.append(data),
                          AreaCalculatorFactory=AreaCalculatorFactory, AreaMethod=AreaMethod,
-                         pixel_to_cm=0.1, DENSITY=900.0, SLICE_COUNT=3)
+                         pixel_to_cm=0.1, DENSITY=900.0, SLICE_COUNT=3, ALLOW_FRAME_EDGE=True)
         with contextlib.redirect_stdout(io.StringIO()):
             exec(filter_cell, namespace)
             exec(estimate_cell, namespace)
@@ -264,6 +276,35 @@ class ScaleValidationTest(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             predicted = CalibratedAreaCalculator(matches[0][3], 1000, 5).volume_from_mask(matches[0][2]).volume
             self.assertAlmostEqual(float(rows[0]["volume"]), predicted, places=5)
+
+    def test_runner_and_tuning_allow_frame_edge_when_requested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test_videos").mkdir()
+            (root / "ground_truth").mkdir()
+            video = root / "test_videos" / "bird.mp4"
+            writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), 5, (640, 300))
+            self.assertTrue(writer.isOpened())
+            frame = np.zeros((300, 640, 3), np.uint8)
+            cv2.ellipse(frame, (600, 150), (95, 60), 0, 0, 360, (255, 255, 255), -1)
+            writer.write(frame)
+            writer.release()
+            (root / "test_videos" / "metadata.csv").write_text("video_name\nbird.mp4\n")
+            (root / "ground_truth" / "events.csv").write_text("video_name,pixel_to_cm\nbird.mp4,0.1\n")
+            (root / "ground_truth" / "gt_boxes.csv").write_text(
+                "video_name,frame_idx,x,y,w,h,weight_kg,event_id\nbird.mp4,1,505,90,135,121,2,e\n")
+            events = [{"video_name": "bird.mp4", "pixel_to_cm": "0.1"}]
+            for allow in (False, True):
+                command = [sys.executable, str(ROOT / "src" / "run_eval.py"), str(root)]
+                if allow:
+                    command.append("--allow-frame-edge")
+                subprocess.run(command, check=True, capture_output=True, text=True)
+                with (root / "results" / "bird_results.csv").open(newline="") as fh:
+                    rows = list(csv.DictReader(fh))
+                matches = collect_matches(root, None, events, 0, 0.3,
+                                          reject_frame_edge=not allow)
+                self.assertEqual(len(rows), int(allow))
+                self.assertEqual(len(matches), int(allow))
 
     def test_cropped_runner_and_tuning_calibrate_from_feeder_without_polygon(self):
         with tempfile.TemporaryDirectory() as tmp:

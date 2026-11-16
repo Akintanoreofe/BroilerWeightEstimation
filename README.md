@@ -241,9 +241,10 @@ estimation. Cropping does not establish that a bird is weight-bearing on the
 scale; occlusion, multiple birds, edge clipping and segmentation errors can
 invalidate the association with a reading. Review the frames and matches.
 The filter preview reports why contours were rejected before scoring.
-Frame-edge contours are excluded because their complete silhouettes are
-unknown; multiple distance-transform peaks can indicate touching birds, but
-may also arise from irregular segmentation. The report does not count
+Frame-edge contours are allowed in the notebook by default, assuming the
+dataset contains complete silhouettes. Set `ALLOW_FRAME_EDGE = False` to
+exclude them if birds can be clipped. Multiple distance-transform peaks can
+indicate touching birds, but may also arise from irregular segmentation. The report does not count
 candidates excluded by score or top-K selection.
 
 The optional, disabled-by-default tuning cell tries slice counts and densities
@@ -295,7 +296,8 @@ The CLI retains its original all-bird behavior unless `--scale-polygons
 /path/to/polygons.json` is supplied. The JSON maps each exact video name to
 its polygon points, for example `{"clip.mp4": [[30, 45], [420, 40],
 [430, 430], [35, 430]]}`. Use
-`--min-scale-overlap` to configure the optional filter, and `--density` and
+`--min-scale-overlap` to configure the optional filter, `--allow-frame-edge`
+to match the notebook's default edge policy, and `--density` and
 `--slices` to match notebook settings; pass the same density to the evaluator
 with `--density`.
 
