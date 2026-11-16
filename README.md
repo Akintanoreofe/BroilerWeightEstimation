@@ -206,17 +206,16 @@ The CSV output contains the following columns:
 #### FlockLabel export and notebook
 
 In a remote VS Code workspace, install the pipeline and notebook dependencies
-in the Python environment used by the remote notebook kernel:
+in the Python environment used by the notebook kernel:
 
 ```bash
 python -m pip install -r requirements.txt ipykernel
 ```
 
-Open `src/validation_walkthrough.ipynb` in VS Code and select that remote
-Python kernel. Copy the FlockLabel export to the remote machine (for example
-into a `dataset` directory at the repository root). Set `EXPORT_DIR` in the
-first code cell to the remote export directory, then run all cells. Paths on
-your local computer are not otherwise accessible remotely.
+Open `src/validation_walkthrough.ipynb` in VS Code and select that Python
+kernel. Copy the FlockLabel export into a `dataset` directory at the
+repository root, or set `EXPORT_DIR` in the first code cell to the export
+directory, then run all cells.
 Relative export paths are resolved from the repository root. The root is
 automatically found when the kernel's working directory is inside the
 repository. Otherwise, set `REPO_ROOT` to the absolute remote path of the
