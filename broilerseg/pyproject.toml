@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "broilerseg"
+version = "0.1.0"
+description = "SAM 3 mask labelling, SAM 3 -> YOLOv8-seg distillation and slice-based volumetric weight estimation for broilers on a scale."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Grace Akintan" }]
+keywords = ["broiler", "poultry", "segmentation", "SAM 3", "YOLOv8", "knowledge distillation", "weight estimation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+# Light core: geometry, calibration, volume, evaluation, visualisation.
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+# SAM 3 teacher (Hugging Face transformers runs on CUDA, Apple MPS or CPU).
+sam = ["torch>=2.4", "transformers>=4.57", "accelerate>=0.30", "huggingface_hub>=0.25"]
+# YOLOv8-seg student (training, inference, NCNN / ONNX export).
+yolo = ["ultralytics>=8.3"]
+# Notebook conveniences.
+notebook = ["jupyterlab>=4", "ipykernel", "ipywidgets>=8", "tqdm>=4.66"]
+dev = ["pytest>=7", "ruff>=0.5", "flake8>=7"]
+all = ["broilerseg[sam,yolo,notebook]"]
+
+[project.scripts]
+broilerseg = "broilerseg.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "UP", "D"]
+ignore = ["D105", "D107", "D203", "D213", "D413", "N803", "N806"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
