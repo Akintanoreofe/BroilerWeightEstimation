@@ -43,7 +43,7 @@ class PromptConfig:
             "feeder": ["orange feeder pan", "round feeding bowl"],
         }
     )
-    score_threshold: float = 0.4
+    score_threshold: float = 0.4  # SAM 3 only; Grounded SAM 2 uses box_threshold
     mask_threshold: float = 0.5
 
 
