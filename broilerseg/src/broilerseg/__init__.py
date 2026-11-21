@@ -4,7 +4,7 @@ Modules
 -------
 config          constants (classes, prompts, feeder diameter, density)
 io              video folders and FlockLabel exports
-segmentation    SAM 3 teacher, YOLO student, mask post-processing
+segmentation    teachers (Grounded SAM 2, SAM 3), YOLO student, mask post-processing
 calibration     pixel-to-cm from the feeder
 volume          slice-based (stacked cylinder) volume and mass
 experiments     end-to-end weight experiment on FlockLabel data
@@ -26,7 +26,7 @@ from broilerseg.config import (
 )
 from broilerseg.volume import VolumeEstimate, estimate_volume, mask_slice_profile
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "CLASS_NAMES", "DEFAULT_DENSITY_KG_M3", "FEEDER_DIAMETER_CM", "PromptConfig", "VolumeConfig",
