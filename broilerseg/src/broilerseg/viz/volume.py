@@ -8,7 +8,7 @@ import pandas as pd
 
 from broilerseg.segmentation.base import Instance, SegmentationResult
 from broilerseg.viz.overlays import blend_masks
-from broilerseg.viz.style import SERIES, class_color, crop_box, image_ax, new_ax
+from broilerseg.viz.style import SERIES, class_color, crop_box, fmt_weight, image_ax, new_ax
 from broilerseg.volume import VolumeEstimate, object_angle
 
 
@@ -152,12 +152,12 @@ def plot_volume_storyboard(image: np.ndarray, result: SegmentationResult, bird: 
         ("silhouette area", f"{est.area_cm2:.0f} cm$^2$"),
         ("volume", f"{est.volume_cm3:,.0f} cm$^3$"),
         ("density", f"{est.density_kg_m3:.0f} kg/m$^3$"),
-        ("ESTIMATE", f"{est.mass_kg:.3f} kg"),
+        ("ESTIMATE", fmt_weight(est.mass_kg)),
     ]
     if actual_kg is not None and np.isfinite(actual_kg):
         err = est.mass_kg - actual_kg
-        lines += [("scale reading", f"{actual_kg:.3f} kg"),
-                  ("error", f"{err:+.3f} kg ({100 * err / actual_kg:+.1f}%)")]
+        lines += [("scale reading", fmt_weight(actual_kg)),
+                  ("error", f"{fmt_weight(err, signed=True)} ({100 * err / actual_kg:+.1f}%)")]
     for k, (a, b) in enumerate(lines):
         bold = a in ("ESTIMATE", "error")
         ax5.text(0.02, 0.95 - k * 0.09, a, fontsize=12, transform=ax5.transAxes,

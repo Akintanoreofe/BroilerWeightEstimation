@@ -49,7 +49,16 @@ from broilerseg.viz.overlays import (
     plot_score_distributions,
     plot_segmentation_panels,
 )
-from broilerseg.viz.style import save, set_style
+from broilerseg.viz.style import (
+    fmt_weight,
+    save,
+    set_style,
+    set_weight_unit,
+    to_display,
+    weight_factor,
+    weight_table,
+    weight_unit,
+)
 from broilerseg.viz.training import (
     plot_count_agreement,
     plot_iou_distribution,
@@ -108,6 +117,12 @@ __all__ = [
     "plot_volume_storyboard",
     "plot_weight_dataset_overview",
     "plot_yolo_label_check",
+    "fmt_weight",
     "save",
     "set_style",
+    "set_weight_unit",
+    "to_display",
+    "weight_factor",
+    "weight_table",
+    "weight_unit",
 ]

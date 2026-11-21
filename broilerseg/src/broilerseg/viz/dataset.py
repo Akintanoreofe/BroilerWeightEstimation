@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from broilerseg.config import CLASS_NAMES
-from broilerseg.viz.style import SERIES, class_color, image_ax
+from broilerseg.viz.style import SERIES, class_color, image_ax, to_display, weight_unit
 
 
 def plot_video_inventory(videos: pd.DataFrame, title: str = "Video folder at a glance"):
@@ -174,6 +174,7 @@ def plot_yolo_label_check(image_path: str | Path, label_path: str | Path, ax=Non
 def plot_weight_dataset_overview(samples: pd.DataFrame,
                                  title: str = "FlockLabel validation data"):
     """Scale readings per event, frames per event and the weight distribution."""
+    samples = to_display(samples)
     fig, axes = plt.subplots(1, 3, figsize=(18, 4.8),
                              gridspec_kw={"width_ratios": [2, 1.2, 1]})
     events = sorted(samples.event_id.unique(), key=lambda e: samples.loc[
@@ -187,7 +188,7 @@ def plot_weight_dataset_overview(samples: pd.DataFrame,
     axes[0].set_xticks(range(len(events)))
     axes[0].set_xticklabels(events, rotation=70, fontsize=7)
     axes[0].set_xlabel("event (sorted by weight)")
-    axes[0].set_ylabel("scale reading (kg)")
+    axes[0].set_ylabel(f"scale reading ({weight_unit()})")
     axes[0].set_title("Per-frame scale readings (orange = event median)")
     cnt = samples.groupby("event_id").size().reindex(events)
     axes[1].bar(range(len(events)), cnt, color=SERIES["neutral"])
@@ -196,7 +197,7 @@ def plot_weight_dataset_overview(samples: pd.DataFrame,
     axes[1].set_title("Labelled frames per event")
     med = samples.groupby("event_id").weight_kg.median()
     axes[2].hist(med, bins=min(20, max(5, len(med))), color=SERIES["teacher"])
-    axes[2].set_xlabel("event median weight (kg)")
+    axes[2].set_xlabel(f"event median weight ({weight_unit()})")
     axes[2].set_title("Weight distribution")
     fig.suptitle(f"{title}: {samples.event_id.nunique()} events, {len(samples)} frames, "
                  f"{samples.video_name.nunique()} videos", fontweight="bold")

@@ -137,3 +137,24 @@ def test_metrics_and_density_fit():
     assert bd.best_density_kg_m3.iloc[0] == pytest.approx(800)
     grid = sweep_grid(vt, [700, 800, 900], cal, held)
     assert grid.loc[grid.held_rmse_kg.idxmin(), "density_kg_m3"] == 800
+
+
+def test_weight_unit_display_only():
+    import pandas as pd
+
+    from broilerseg import viz
+
+    df = pd.DataFrame({"actual_kg": [2.5], "pred_kg": [2.4], "cal_rmse_kg": [0.1],
+                       "density_kg_m3": [900.0]})
+    try:
+        viz.set_weight_unit("g")
+        t = viz.weight_table(df)
+        assert t.actual_g.iloc[0] == 2500 and t.cal_rmse_g.iloc[0] == pytest.approx(100)
+        assert t.density_kg_m3.iloc[0] == 900          # density is not a weight
+        assert df.actual_kg.iloc[0] == 2.5              # original untouched
+        assert viz.fmt_weight(-0.0425, signed=True) == "-42 g"
+        with pytest.raises(ValueError):
+            viz.set_weight_unit("lb")
+    finally:
+        viz.set_weight_unit("kg")
+    assert viz.fmt_weight(2.5) == "2.500 kg"

@@ -7,20 +7,31 @@ import numpy as np
 import pandas as pd
 
 from broilerseg.evaluation import event_table, regression_metrics
-from broilerseg.viz.style import SERIES, new_ax
+from broilerseg.viz.style import SERIES, new_ax, to_display, weight_factor, weight_unit
 
 
 def _metrics_text(m: dict) -> str:
-    return (f"n={m['n']}\nMAE {m['mae']:.3f} kg\nRMSE {m['rmse']:.3f} kg\n"
-            f"bias {m['bias']:+.3f} kg\nMAPE {m['mape']:.1f}%\nR$^2$ {m['r2']:.2f}")
+    """Metrics box; ``m`` must already be in the display unit."""
+    u, d = weight_unit(), 3 if weight_unit() == "kg" else 0
+    return (f"n={m['n']}\nMAE {m['mae']:.{d}f} {u}\nRMSE {m['rmse']:.{d}f} {u}\n"
+            f"bias {m['bias']:+.{d}f} {u}\nMAPE {m['mape']:.1f}%\nR$^2$ {m['r2']:.2f}")
 
 
 def plot_pred_vs_actual(df: pd.DataFrame, pred: str = "pred_kg", actual: str = "actual_kg",
                         ax=None, title: str = "Estimated vs scale weight", band_pct: float = 10,
-                        color=None, label: str | None = None, annotate: bool = True):
-    """Scatter with the 1:1 line, a +/- ``band_pct`` % band and the metrics."""
+                        color=None, label: str | None = None, annotate: bool = True,
+                        xlabel: str | None = None, ylabel: str | None = None):
+    """Scatter with the 1:1 line, a +/- ``band_pct`` % band and the metrics.
+
+    ``df`` holds kilograms; values are shown in the unit set by
+    :func:`broilerseg.viz.style.set_weight_unit`.
+    """
     fig, ax = new_ax(ax, (6, 6))
-    d = df[np.isfinite(df[pred]) & np.isfinite(df[actual])]
+    u = weight_unit()
+    xlabel = xlabel or f"scale reading ({u})"
+    ylabel = ylabel or f"estimated ({u})"
+    d = to_display(df, (pred, actual))
+    d = d[np.isfinite(d[pred]) & np.isfinite(d[actual])]
     lo = 0.9 * np.nanmin([d[pred].min(), d[actual].min()]) if len(d) else 0
     hi = 1.1 * np.nanmax([d[pred].max(), d[actual].max()]) if len(d) else 1
     xs = np.linspace(lo, hi, 50)
@@ -32,8 +43,8 @@ def plot_pred_vs_actual(df: pd.DataFrame, pred: str = "pred_kg", actual: str = "
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
     ax.set_aspect("equal")
-    ax.set_xlabel("scale reading (kg)")
-    ax.set_ylabel("estimated (kg)")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     ax.set_title(title)
     if annotate:
         ax.text(0.03, 0.97, _metrics_text(regression_metrics(d[actual], d[pred])),
@@ -56,13 +67,14 @@ def plot_accuracy_overview(records: pd.DataFrame, title: str = "Weight accuracy"
 
 def plot_error_analysis(records: pd.DataFrame, title: str = "Where do the errors come from?"):
     """Residual histogram, residual vs weight, Bland-Altman and abs-% error CDF."""
-    d = records.dropna(subset=["pred_kg", "actual_kg"])
+    u = weight_unit()
+    d = to_display(records).dropna(subset=["pred_kg", "actual_kg"])
     e = d.pred_kg - d.actual_kg
     fig, axes = plt.subplots(1, 4, figsize=(20, 4.3))
     axes[0].hist(e, bins=25, color=SERIES["pred"], edgecolor="white")
     axes[0].axvline(0, color="k", lw=1)
-    axes[0].axvline(e.mean(), color=SERIES["bad"], ls="--", label=f"mean {e.mean():+.3f}")
-    axes[0].set_xlabel("error (kg)")
+    axes[0].axvline(e.mean(), color=SERIES["bad"], ls="--", label=f"mean {e.mean():+.3g} {u}")
+    axes[0].set_xlabel(f"error ({u})")
     axes[0].legend()
     axes[0].set_title("Error distribution")
     axes[1].scatter(d.actual_kg, e, s=14, alpha=0.6, color=SERIES["pred"])
@@ -70,18 +82,18 @@ def plot_error_analysis(records: pd.DataFrame, title: str = "Where do the errors
     if len(d) > 2:
         k, b = np.polyfit(d.actual_kg, e, 1)
         xs = np.linspace(d.actual_kg.min(), d.actual_kg.max(), 10)
-        axes[1].plot(xs, k * xs + b, color=SERIES["bad"], label=f"trend {k:+.2f} kg/kg")
+        axes[1].plot(xs, k * xs + b, color=SERIES["bad"], label=f"trend {k:+.2f} {u}/{u}")
         axes[1].legend()
-    axes[1].set_xlabel("scale reading (kg)")
-    axes[1].set_ylabel("error (kg)")
+    axes[1].set_xlabel(f"scale reading ({u})")
+    axes[1].set_ylabel(f"error ({u})")
     axes[1].set_title("Error vs bird weight")
     mean = (d.pred_kg + d.actual_kg) / 2
     sd = e.std()
     axes[2].scatter(mean, e, s=14, alpha=0.6, color=SERIES["teacher"])
     for v, ls in ((e.mean(), "-"), (e.mean() + 1.96 * sd, "--"), (e.mean() - 1.96 * sd, "--")):
         axes[2].axhline(v, color="gray", ls=ls)
-    axes[2].set_xlabel("mean of estimate and scale (kg)")
-    axes[2].set_ylabel("difference (kg)")
+    axes[2].set_xlabel(f"mean of estimate and scale ({u})")
+    axes[2].set_ylabel(f"difference ({u})")
     axes[2].set_title("Bland-Altman (95% limits of agreement)")
     ape = np.sort(np.abs(e / d.actual_kg) * 100)
     axes[3].plot(ape, np.linspace(0, 100, len(ape)), color=SERIES["student"], lw=2)
@@ -99,6 +111,7 @@ def plot_error_analysis(records: pd.DataFrame, title: str = "Where do the errors
 
 def plot_per_event(records: pd.DataFrame, title: str = "Every weighing event"):
     """Median estimate vs median scale per event, with every frame estimate as a dot."""
+    records = to_display(records)
     ev = event_table(records).sort_values("actual_kg").reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(ev) + 3), 4.8))
     x = np.arange(len(ev))
@@ -112,7 +125,7 @@ def plot_per_event(records: pd.DataFrame, title: str = "Every weighing event"):
                 ha="center", va="bottom", fontsize=7)
     ax.set_xticks(x)
     ax.set_xticklabels(ev.event_id, rotation=70, fontsize=7)
-    ax.set_ylabel("kg")
+    ax.set_ylabel(weight_unit())
     ax.legend()
     ax.set_title(f"{title} (dots = individual frames, label = % error)")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
@@ -122,6 +135,7 @@ def plot_per_event(records: pd.DataFrame, title: str = "Every weighing event"):
 def plot_frame_traces(records: pd.DataFrame, max_events: int = 12, ncols: int = 4,
                       title: str = "Estimate frame by frame within each event"):
     """Small multiples: estimate and scale reading along each clip."""
+    records = to_display(records)
     events = list(dict.fromkeys(records.event_id))[:max_events]
     nrows = int(np.ceil(len(events) / ncols)) or 1
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 2.8 * nrows), squeeze=False,
@@ -138,7 +152,7 @@ def plot_frame_traces(records: pd.DataFrame, max_events: int = 12, ncols: int = 
         ax.set_xlabel("frame")
     for ax in axes.ravel()[len(events):]:
         ax.axis("off")
-    axes[0, 0].set_ylabel("kg")
+    axes[0, 0].set_ylabel(weight_unit())
     axes[0, 0].legend(fontsize=7)
     fig.suptitle(title, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
@@ -179,8 +193,9 @@ def plot_implied_density(records: pd.DataFrame, reference: float = 900.0,
     axes[1].set_xlabel("silhouette area (cm$^2$)")
     axes[1].set_ylabel("implied density")
     axes[1].set_title("vs bird size (a slope = size bias)")
-    axes[2].scatter(d.actual_kg, d.implied_density, s=14, alpha=0.6, color=SERIES["student"])
-    axes[2].set_xlabel("scale reading (kg)")
+    axes[2].scatter(d.actual_kg * weight_factor(), d.implied_density, s=14, alpha=0.6,
+                    color=SERIES["student"])
+    axes[2].set_xlabel(f"scale reading ({weight_unit()})")
     axes[2].set_title("vs weight")
     fig.suptitle(title, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
@@ -192,23 +207,32 @@ def plot_feature_relationships(records: pd.DataFrame,
     """Scale reading against area, length, width and volume, with correlation."""
     feats = [("area_cm2", "area (cm$^2$)"), ("length_cm", "length (cm)"),
              ("max_width_cm", "max width (cm)"), ("volume_cm3", "volume (cm$^3$)")]
-    d = records.dropna(subset=["pred_kg"])
+    d = to_display(records).dropna(subset=["pred_kg"])
     fig, axes = plt.subplots(1, 4, figsize=(20, 4.2), sharey=True)
     for ax, (c, lab) in zip(axes, feats, strict=False):
         ax.scatter(d[c], d.actual_kg, s=14, alpha=0.6, color=SERIES["pred"])
         r = np.corrcoef(d[c], d.actual_kg)[0, 1] if len(d) > 2 else np.nan
         ax.set_xlabel(lab)
         ax.set_title(f"r = {r:.2f}")
-    axes[0].set_ylabel("scale reading (kg)")
+    axes[0].set_ylabel(f"scale reading ({weight_unit()})")
     fig.suptitle(title, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     return fig
+
+
+def _sweep_display(grid: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, str]:
+    """Convert a ``*_kg`` error column of a sweep grid to the display unit."""
+    if not metric.endswith("_kg") or weight_unit() == "kg":
+        return grid, metric
+    new = metric[:-3] + "_" + weight_unit()
+    return grid.assign(**{new: grid[metric] * weight_factor()}), new
 
 
 def plot_sweep_heatmap(grid: pd.DataFrame, metric: str = "held_rmse_kg", ax=None,
                        title: str | None = None):
     """Heatmap of an error metric over slice count x density, best cell outlined."""
     fig, ax = new_ax(ax, (11, 4.8))
+    grid, metric = _sweep_display(grid, metric)
     piv = grid.pivot_table(index="slice_count", columns="density_kg_m3", values=metric,
                            sort=False)
     im = ax.imshow(piv.to_numpy(), aspect="auto", cmap="RdYlGn_r")
@@ -224,7 +248,8 @@ def plot_sweep_heatmap(grid: pd.DataFrame, metric: str = "held_rmse_kg", ax=None
     if np.isfinite(vals).any():
         i, j = np.unravel_index(np.nanargmin(vals), vals.shape)
         ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False, ec="black", lw=2.5))
-        ax.set_title(title or f"{metric}: best {vals[i, j]:.3f} at slices={piv.index[i]}, "
+        dec = 1 if metric.endswith("_g") else 3
+        ax.set_title(title or f"{metric}: best {vals[i, j]:.{dec}f} at slices={piv.index[i]}, "
                      f"density={piv.columns[j]:.0f}")
     return fig
 
@@ -233,6 +258,7 @@ def plot_sweep_curves(grid: pd.DataFrame, metric: str = "held_rmse_kg", ax=None,
                       title: str = "Error vs density for each slice count"):
     """One line per slice count across densities."""
     fig, ax = new_ax(ax, (8, 4.5))
+    grid, metric = _sweep_display(grid, metric)
     cmap = plt.get_cmap("viridis")
     groups = list(grid.groupby("slice_count", sort=False))
     for k, (sc, g) in enumerate(groups):
@@ -249,7 +275,8 @@ def plot_method_comparison(runs: dict[str, pd.DataFrame],
                            title: str = "SAM 3 teacher vs YOLO student: weight accuracy"):
     """Frame-level metrics bars plus overlaid predicted-vs-actual for each method."""
     names = list(runs)
-    mets = {n: regression_metrics(r.actual_kg, r.pred_kg) for n, r in runs.items()}
+    f = weight_factor()
+    mets = {n: regression_metrics(r.actual_kg * f, r.pred_kg * f) for n, r in runs.items()}
     cov = {n: 100 * r.pred_kg.notna().mean() for n, r in runs.items()}
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.2))
     cmap = plt.get_cmap("Set2")
@@ -260,7 +287,7 @@ def plot_method_comparison(runs: dict[str, pd.DataFrame],
         axes[0].bar(x + k * w, vals, w, color=cmap(k), label=n)
     axes[0].set_xticks(x + w * (len(names) - 1) / 2)
     axes[0].set_xticklabels(["MAE", "RMSE", "|bias|"])
-    axes[0].set_ylabel("kg")
+    axes[0].set_ylabel(weight_unit())
     axes[0].legend()
     axes[0].set_title("Error (lower is better)")
     colors = [cmap(k) for k in range(len(names))]

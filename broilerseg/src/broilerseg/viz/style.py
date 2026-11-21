@@ -88,3 +88,60 @@ def crop_box(mask_or_box, shape, pad: float = 0.25) -> tuple[int, int, int, int]
     pw, ph = (x2 - x1) * pad, (y2 - y1) * pad
     return (int(max(0, x1 - pw)), int(max(0, y1 - ph)), int(min(shape[1], x2 + pw)),
             int(min(shape[0], y2 + ph)))
+
+
+# --------------------------------------------------------------------- weight unit
+#: Weight columns that hold kilograms in package tables.
+WEIGHT_COLUMNS = ("actual_kg", "pred_kg", "event_weight_kg", "error_kg", "pred_std_kg",
+                  "weight_kg", "min_weight_kg", "max_weight_kg")
+_WEIGHT = {"unit": "kg", "factor": 1.0, "decimals": 3}
+
+
+def set_weight_unit(unit: str = "kg") -> None:
+    """Show weights in plots and tables as ``"kg"`` (default) or ``"g"``.
+
+    Only the display changes: calculations, saved CSVs and density
+    (kg / m^3) stay in kilograms.
+    """
+    if unit not in ("kg", "g"):
+        raise ValueError("unit must be 'kg' or 'g'")
+    _WEIGHT.update(unit=unit, factor=1.0 if unit == "kg" else 1000.0,
+                   decimals=3 if unit == "kg" else 0)
+
+
+def weight_unit() -> str:
+    """Return the current display unit (``"kg"`` or ``"g"``)."""
+    return _WEIGHT["unit"]
+
+
+def weight_factor() -> float:
+    """Return the multiplier from kilograms to the display unit."""
+    return _WEIGHT["factor"]
+
+
+def fmt_weight(kg: float, signed: bool = False) -> str:
+    """Format a weight given in kg, e.g. ``"2.345 kg"`` or ``"2345 g"``."""
+    sign = "+" if signed else ""
+    return f"{kg * _WEIGHT['factor']:{sign}.{_WEIGHT['decimals']}f} {_WEIGHT['unit']}"
+
+
+def to_display(df, columns=WEIGHT_COLUMNS):
+    """Copy of ``df`` with weight columns converted to the display unit (same names)."""
+    out = df.copy()
+    for c in columns:
+        if c in out:
+            out[c] = out[c] * _WEIGHT["factor"]
+    return out
+
+
+def weight_table(df):
+    """Copy of ``df`` for display: weight columns converted and renamed ``*_kg`` -> ``*_g``."""
+    out = to_display(df)
+    if _WEIGHT["unit"] == "kg":
+        return out
+    ren = {c: c[:-3] + "_g" for c in out.columns
+           if c in WEIGHT_COLUMNS or c.endswith(("_mae_kg", "_rmse_kg", "_bias_kg"))}
+    for c in out.columns:
+        if c.endswith(("_mae_kg", "_rmse_kg", "_bias_kg")) and c not in WEIGHT_COLUMNS:
+            out[c] = out[c] * _WEIGHT["factor"]
+    return out.rename(columns=ren)
