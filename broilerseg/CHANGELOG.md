@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 (2026-11-22)
+
+* Plots that grew with the data are capped (sampling plan, folder summary, video inventory,
+  calibration stability, per-event, nested CV), so thousands of videos no longer exceed
+  matplotlib's 65,536-pixel image limit.
+* Notebook 2: `MAX_VIDEOS` (spread evenly over all folders) and a labelling-time estimate.
+
 ## 0.4.0 (2026-11-22)
 
 * Three notebooks: 01 teacher + fitted weight, 02 distillation (label, train, evaluate, SAVE),

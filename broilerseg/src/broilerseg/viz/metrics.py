@@ -109,10 +109,15 @@ def plot_error_analysis(records: pd.DataFrame, title: str = "Where do the errors
     return fig
 
 
-def plot_per_event(records: pd.DataFrame, title: str = "Every weighing event"):
-    """Median estimate vs median scale per event, with every frame estimate as a dot."""
+def plot_per_event(records: pd.DataFrame, title: str = "Every weighing event",
+                   max_events: int = 60):
+    """Median estimate vs median scale per event, frame estimates as dots (<= ``max_events``)."""
     records = to_display(records)
     ev = event_table(records).sort_values("actual_kg").reset_index(drop=True)
+    if len(ev) > max_events:
+        keep = np.unique(np.linspace(0, len(ev) - 1, max_events).astype(int))
+        title += f" (showing {len(keep)} of {len(ev)}, spread over the weight range)"
+        ev = ev.iloc[keep].reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(ev) + 3), 4.8))
     x = np.arange(len(ev))
     ax.bar(x - 0.2, ev.actual_kg, 0.4, color=SERIES["actual"], label="scale (median)")
