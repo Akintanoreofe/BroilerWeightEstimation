@@ -91,8 +91,11 @@ def _bird_weight_kg(a_px, b_px, px_to_cm, density=1000.0, depth_ratio=0.8):
 
 
 def make_demo_data(out_dir: str | Path, n_events: int = 6, frames_per_event: int = 12,
-                   size=(480, 640), seed: int = 0) -> dict[str, Path]:
+                   size=(480, 640), seed: int = 0, nested: bool = False) -> dict[str, Path]:
     """Write synthetic videos and a FlockLabel evaluation export.
+
+    With ``nested=True`` the raw videos go into ``day<k>/cam<j>/`` sub-folders
+    and several share the same file name, like real CCTV dumps.
 
     Returns
     -------
@@ -118,7 +121,10 @@ def make_demo_data(out_dir: str | Path, n_events: int = 6, frames_per_event: int
         weight = _bird_weight_kg(a, b, px_to_cm)
         writer = cv2.VideoWriter(str(exp / "test_videos" / name),
                                  cv2.VideoWriter_fourcc(*"mp4v"), 10, (w, h))
-        raw = cv2.VideoWriter(str(vids / name), cv2.VideoWriter_fourcc(*"mp4v"), 10, (w, h))
+        raw_path = (vids / f"day{e // 2 + 1}" / f"cam{e % 2 + 1}" / "ch01.mp4") if nested \
+            else vids / name
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw = cv2.VideoWriter(str(raw_path), cv2.VideoWriter_fourcc(*"mp4v"), 10, (w, h))
         other = (((80, 380), (50, 25), 20.0),)
         for f in range(frames_per_event):
             cx = 400 + 15 * np.sin(f / 3)

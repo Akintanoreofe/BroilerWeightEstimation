@@ -300,6 +300,9 @@ def plot_method_comparison(runs: dict[str, pd.DataFrame],
     for k, n in enumerate(names):
         plot_pred_vs_actual(runs[n], ax=axes[2], color=cmap(k), label=n, annotate=False,
                             title="Every frame")
+    handles, labels = axes[2].get_legend_handles_labels()
+    seen = dict(zip(labels, handles, strict=False))         # one entry per label
+    axes[2].legend(seen.values(), seen.keys(), loc="lower right")
     fig.suptitle(title, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     return fig

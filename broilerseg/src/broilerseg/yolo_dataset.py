@@ -83,7 +83,7 @@ def split_by_group(groups, ratios=(0.8, 0.2, 0.0), seed: int = 42) -> dict[str, 
 def build_yolo_dataset(label_dir: str | Path, out_dir: str | Path,
                        ratios=(0.8, 0.2, 0.0), seed: int = 42, min_score: float = 0.0,
                        epsilon_px: float = 1.0, min_area_px: float = 50.0,
-                       require_broiler: bool = False) -> pd.DataFrame:
+                       require_broiler: bool = False, split_by: str = "video") -> pd.DataFrame:
     """Convert an :func:`broilerseg.labeling.auto_label_videos` folder to YOLO-seg.
 
     Parameters
@@ -102,6 +102,9 @@ def build_yolo_dataset(label_dir: str | Path, out_dir: str | Path,
         Polygon simplification and minimum blob size.
     require_broiler : bool
         Skip frames where the teacher found no broiler.
+    split_by : {"video", "folder"}
+        Keep whole videos together (default), or whole sub-folders (e.g. days
+        or cameras) for a harder test of generalisation.
 
     Returns
     -------
@@ -114,7 +117,17 @@ def build_yolo_dataset(label_dir: str | Path, out_dir: str | Path,
     manifest = pd.read_csv(src / "manifest.csv")
     if require_broiler:
         manifest = manifest[manifest.n_broiler > 0]
-    split = split_by_group(manifest.video_stem, ratios, seed)
+    if split_by == "folder":
+        groups = (manifest.folder if "folder" in manifest
+                  else manifest.video.map(lambda v: str(Path(v).parent)))
+    elif split_by == "video":
+        groups = manifest.video_stem
+    else:
+        raise ValueError("split_by must be 'video' or 'folder'")
+    manifest = manifest.assign(split_group=groups.astype(str))
+    group_split = split_by_group(manifest.split_group, ratios, seed)
+    split = {stem: group_split[g]
+             for stem, g in zip(manifest.video_stem, manifest.split_group, strict=False)}
     for s in ("train", "val", "test"):
         (out / "images" / s).mkdir(parents=True, exist_ok=True)
         (out / "labels" / s).mkdir(parents=True, exist_ok=True)
@@ -123,7 +136,8 @@ def build_yolo_dataset(label_dir: str | Path, out_dir: str | Path,
         res = load_result(src / r.masks)
         h, w = res.image_shape
         sp = split[r.video_stem]
-        lines, row = [], {"stem": r.stem, "video_stem": r.video_stem, "split": sp}
+        lines, row = [], {"stem": r.stem, "video_stem": r.video_stem, "split_group": r.split_group,
+                          "split": sp}
         for cid, cname in enumerate(CLASS_NAMES):
             polys_all, teacher = [], np.zeros((h, w), bool)
             for inst in res.of_class(cname):

@@ -7,6 +7,7 @@ overlays     masks on frames, per-class panels, galleries, bird selection
 calibration  feeder measurement and pixel-to-cm stability
 volume       alignment, slices, 3D cylinders, slice-count convergence, storyboard
 dataset      video inventory, sampling plan, label statistics, YOLO dataset checks
+mass_model   fitted mass equation, sensitivity, density estimate
 metrics      weight accuracy, error analysis, density / slice sweeps, method comparison
 training     YOLO training curves, teacher vs student agreement, speed
 """
@@ -18,6 +19,7 @@ from broilerseg.viz.calibration import (
 )
 from broilerseg.viz.dataset import (
     plot_contact_sheet,
+    plot_folder_summary,
     plot_label_statistics,
     plot_motion_profile,
     plot_sampling_plan,
@@ -25,6 +27,16 @@ from broilerseg.viz.dataset import (
     plot_video_inventory,
     plot_weight_dataset_overview,
     plot_yolo_label_check,
+)
+from broilerseg.viz.mass_model import (
+    plot_cv_landscape,
+    plot_density_estimate,
+    plot_fold_stability,
+    plot_mask_adjustments,
+    plot_mass_fit,
+    plot_model_comparison,
+    plot_nested_choices,
+    plot_parameter_sensitivity,
 )
 from broilerseg.viz.metrics import (
     plot_accuracy_overview,
@@ -63,6 +75,7 @@ from broilerseg.viz.training import (
     plot_count_agreement,
     plot_iou_distribution,
     plot_speed_accuracy,
+    plot_student_metrics,
     plot_teacher_student,
     plot_training_curves,
 )
@@ -84,6 +97,15 @@ __all__ = [
     "plot_calibration_stability",
     "plot_contact_sheet",
     "plot_count_agreement",
+    "plot_cv_landscape",
+    "plot_density_estimate",
+    "plot_fold_stability",
+    "plot_folder_summary",
+    "plot_mask_adjustments",
+    "plot_mass_fit",
+    "plot_model_comparison",
+    "plot_nested_choices",
+    "plot_parameter_sensitivity",
     "plot_cylinders_3d",
     "plot_error_analysis",
     "plot_feature_relationships",
@@ -109,6 +131,7 @@ __all__ = [
     "plot_speed_accuracy",
     "plot_split_summary",
     "plot_status_breakdown",
+    "plot_student_metrics",
     "plot_sweep_curves",
     "plot_sweep_heatmap",
     "plot_teacher_student",

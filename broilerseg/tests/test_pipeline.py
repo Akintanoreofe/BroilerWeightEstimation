@@ -47,3 +47,32 @@ def test_label_build_and_read_back(demo, tmp_path):
     r = ds.iloc[0]
     lines = read_yolo_label(tmp_path / "yolo" / "labels" / r.split / f"{r.stem}.txt", 640, 480)
     assert sorted({c for c, _ in lines}) == [0, 1, 2]
+
+
+def test_nested_folders_unique_ids_and_folder_split(tmp_path):
+    p = make_demo_data(tmp_path / "nest", n_events=6, frames_per_event=4, nested=True)
+    vids = scan_videos(p["videos"])
+    assert len(vids) == 6 and vids.name.nunique() == 1          # every file is called ch01.mp4
+    assert vids.video_id.nunique() == 6 and vids.folder.nunique() == 6
+    assert "day1__cam1__ch01" in set(vids.video_id)
+    plan = plan_sampling(vids, 2)
+    man = auto_label_videos(p["videos"], tmp_path / "lab", ColorSegmenter(), plan=plan,
+                            progress=False)
+    assert man.stem.nunique() == 12                              # no frame overwritten another
+    ds = build_yolo_dataset(tmp_path / "lab", tmp_path / "yolo", split_by="folder")
+    assert ds.groupby("split_group").split.nunique().max() == 1
+
+
+def test_save_student_card_without_weights(tmp_path):
+    import json
+
+    from broilerseg.distill import save_student
+
+    run = tmp_path / "run"
+    (run / "weights").mkdir(parents=True)
+    (run / "results.csv").write_text("epoch,metrics/mAP50-95(M)\n1,0.5\n")
+    (run / "results.png").write_bytes(b"png")
+    out = save_student(run, tmp_path / "models", "demo", card={"imgsz": 320, "teacher": "x"})
+    card = json.loads((out / "model_card.json").read_text())
+    assert card["imgsz"] == 320 and card["weights"] is None
+    assert (out / "results.csv").is_file() and (out / "training" / "results.png").is_file()

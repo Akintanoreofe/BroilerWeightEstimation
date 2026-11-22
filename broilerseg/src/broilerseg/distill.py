@@ -144,3 +144,115 @@ def path_size_mb(path: str | Path) -> float:
     if p.is_file():
         return p.stat().st_size / 1e6
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) / 1e6
+
+
+# ----------------------------------------------------------------- evaluate / save / load
+def evaluate_student(weights: str | Path, data_yaml: str | Path, split: str = "val",
+                     imgsz: int = 640, device: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """Ultralytics validation of the student on a dataset split.
+
+    Returns overall box / mask metrics and a per-class table (mask and box
+    mAP50-95). The validation plots are written to Ultralytics' run folder.
+    """
+    from ultralytics import YOLO
+
+    model = YOLO(str(weights))
+    r = model.val(data=str(data_yaml), split=split, imgsz=imgsz, plots=True,
+                  device=device or pick_train_device(), verbose=False)
+    overall = {"split": split,
+               "mask_mAP50": float(r.seg.map50), "mask_mAP50-95": float(r.seg.map),
+               "mask_precision": float(r.seg.mp), "mask_recall": float(r.seg.mr),
+               "box_mAP50": float(r.box.map50), "box_mAP50-95": float(r.box.map),
+               "box_precision": float(r.box.mp), "box_recall": float(r.box.mr)}
+    names = r.names if isinstance(r.names, dict) else dict(enumerate(r.names))
+    per_class = pd.DataFrame({"class_name": [names[i] for i in range(len(r.seg.maps))],
+                              "mask_mAP50-95": [float(v) for v in r.seg.maps],
+                              "box_mAP50-95": [float(v) for v in r.box.maps]})
+    return overall, per_class
+
+
+def save_student(run_dir: str | Path, out_dir: str | Path, name: str = "broiler_student",
+                 exports: dict | None = None, card: dict | None = None,
+                 weights: str | Path | None = None) -> Path:
+    """Copy the trained student and everything needed to use it into one folder.
+
+    Layout::
+
+        <out_dir>/<name>/
+            best.pt                 trained weights (if a training run exists)
+            best_ncnn_model/        Raspberry Pi export (if exported)
+            best.onnx               portable export (if exported)
+            data.yaml, results.csv  dataset definition and training curves
+            training/*.png          Ultralytics training plots
+            model_card.json         classes, image size, teacher, metrics, dates
+
+    Notebook 3 loads this folder with :func:`load_student`.
+    """
+    import json
+    import shutil
+    from datetime import datetime
+
+    dest = Path(out_dir).expanduser() / name
+    dest.mkdir(parents=True, exist_ok=True)
+    run = Path(run_dir) if run_dir else None
+    src_w = Path(weights) if weights else (run / "weights" / "best.pt" if run else None)
+    if src_w is not None and src_w.is_file():
+        shutil.copy2(src_w, dest / "best.pt")
+    if run is not None and run.is_dir():
+        for f in ("results.csv", "args.yaml"):
+            if (run / f).is_file():
+                shutil.copy2(run / f, dest / f)
+        (dest / "training").mkdir(exist_ok=True)
+        for f in list(run.glob("*.png")) + list(run.glob("*.jpg")):
+            shutil.copy2(f, dest / "training" / f.name)
+    for path in (exports or {}).values():
+        path = Path(path)
+        if path.is_dir():
+            shutil.copytree(path, dest / path.name, dirs_exist_ok=True)
+        elif path.is_file():
+            shutil.copy2(path, dest / path.name)
+    info = {"name": name, "saved": datetime.now().isoformat(timespec="seconds"),
+            "classes": list(CLASS_NAMES), "weights": "best.pt" if (dest / "best.pt").is_file()
+            else None, "exports": {k: Path(v).name for k, v in (exports or {}).items()}}
+    info.update(card or {})
+    (dest / "model_card.json").write_text(json.dumps(info, indent=2, default=str))
+    return dest
+
+
+def load_student(model_dir: str | Path, fmt: str = "pt", conf: float = 0.25,
+                 device: str | None = None):
+    """Load a model saved by :func:`save_student`.
+
+    Parameters
+    ----------
+    model_dir : path-like
+        The saved folder, or a ``.pt`` file directly.
+    fmt : {"pt", "ncnn", "onnx"}
+        Which copy to run (``ncnn`` / ``onnx`` behave as on the Raspberry Pi).
+    conf : float
+        Detection confidence threshold.
+    device : str, optional
+        Torch device; Ultralytics picks one if omitted.
+
+    Returns
+    -------
+    (YoloSegmenter, dict)
+        The segmenter and the model card.
+    """
+    import json
+
+    from broilerseg.segmentation.yolo import YoloSegmenter
+
+    p = Path(model_dir).expanduser()
+    if p.is_file():
+        return YoloSegmenter(p, conf=conf, device=device), {"weights": p.name}
+    card_path = p / "model_card.json"
+    card = json.loads(card_path.read_text()) if card_path.is_file() else {}
+    imgsz = int(card.get("imgsz", 640))
+    exported = card.get("exports", {})
+    target = {"pt": p / "best.pt", "ncnn": p / exported.get("ncnn", "best_ncnn_model"),
+              "onnx": p / exported.get("onnx", "best.onnx")}[fmt]
+    if not target.exists():
+        raise FileNotFoundError(f"{target} not found in {p}; available: "
+                                f"{sorted(x.name for x in p.iterdir())}")
+    return YoloSegmenter(target, imgsz=imgsz, conf=conf, device=device), card

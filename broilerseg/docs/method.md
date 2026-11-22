@@ -1,6 +1,14 @@
 # Method
 
-## 1. Segmentation: SAM 3 teacher
+## 1. Segmentation: the teacher
+
+Two interchangeable teachers share the same text prompts and output format (`segmentation.load_teacher`).
+
+**Grounded SAM 2 (default; public models, Apache-2.0).** For each class, Grounding DINO receives the class phrases as one query (`"chicken. broiler chicken."`) and returns boxes with scores above `box_threshold` (0.3), using `text_threshold` (0.25) for phrase matching. Overlapping boxes of a class are merged by box NMS (IoU 0.5). SAM 2.1 then encodes the image once and returns one mask per box. The instance score is the Grounding DINO box score. Mask quality depends on the boxes: a missed box means a missed object.
+
+**SAM 3 (gated).** Detection and masks come from one model, as described below.
+
+### SAM 3
 
 SAM 3 ("Segment Anything with Concepts") returns every instance of a concept named by a short noun phrase. `Sam3Segmenter` computes the image embedding **once per frame** and queries several phrases per class (`config.PromptConfig`):
 
@@ -65,3 +73,21 @@ Response-based distillation: the student learns to reproduce the teacher's masks
 5. Fine-tune COCO-pretrained `yolov8n-seg.pt` (about 3.4 M parameters).
 6. Evaluate the student against the teacher on validation videos: per-class mask IoU, instance-count agreement, latency. Then compare **weight accuracy** with student masks against teacher masks on FlockLabel data, because a high mask IoU doesn't guarantee good weights.
 7. Export to **NCNN** for the Raspberry Pi (ONNX as a fallback).
+
+## 7. One fitted mass equation (`broilerseg.massmodel`)
+
+m = a * V^b, with V = pi/4 * p_c^3 * sum_{i in S_tau} (d_i^(delta))^2 * w_i.
+
+| parameter | corrects | fitted by |
+|---|---|---|
+| delta (px) | mask boundary bias | grid |
+| tau | head / neck / tail counted as body | grid |
+| n | slice count | grid |
+| c | calibration method x scope (frame / video / camera median) | grid |
+| b | weight not proportional to volume | closed form, ridge towards 1; fixed at 1 if event weights vary < 5% |
+| a | effective density (rho = a * 1e6 for b = 1) | closed form |
+
+Scored by leave-one-event-out CV on event medians; nested CV (the whole search repeated
+without each event) gives the unbiased error to report. Any factor that scales every bird
+equally (constant depth ratio, constant perspective correction) is absorbed by `a`.
+See `docs/methodology.pdf` for the derivation and diagrams.
