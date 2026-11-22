@@ -9,6 +9,7 @@ calibration     pixel-to-cm from the feeder
 volume          slice-based (stacked cylinder) volume and mass
 experiments     end-to-end weight experiment on FlockLabel data
 evaluation      metrics, event tables, density x slice sweeps
+massmodel       one fitted mass equation m = a V^b with shape / calibration settings
 labeling        auto-label video frames with SAM 3
 yolo_dataset    SAM 3 masks -> YOLO-seg dataset
 distill         train / compare / export the student
@@ -26,7 +27,7 @@ from broilerseg.config import (
 )
 from broilerseg.volume import VolumeEstimate, estimate_volume, mask_slice_profile
 
-__version__ = "0.2.1"
+__version__ = "0.4.0"
 
 __all__ = [
     "CLASS_NAMES", "DEFAULT_DENSITY_KG_M3", "FEEDER_DIAMETER_CM", "PromptConfig", "VolumeConfig",

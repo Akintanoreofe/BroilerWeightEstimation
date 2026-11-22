@@ -149,3 +149,45 @@ def plot_speed_accuracy(rows: list[dict], title: str = "Speed vs agreement with 
     fig.suptitle(title, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     return fig
+
+
+def plot_student_metrics(overall: dict | list, per_class: pd.DataFrame | None = None,
+                         title: str = "Student accuracy on held-out videos (vs teacher labels)"):
+    """Overall mask / box metrics per split, and mAP50-95 per class."""
+    rows = overall if isinstance(overall, list) else [overall]
+    df = pd.DataFrame(rows).set_index("split")
+    cols = ["mask_mAP50", "mask_mAP50-95", "mask_precision", "mask_recall",
+            "box_mAP50", "box_mAP50-95"]
+    fig, axes = plt.subplots(1, 2 if per_class is not None else 1, figsize=(16, 4.5),
+                             squeeze=False, gridspec_kw={"width_ratios": [2, 1]}
+                             if per_class is not None else None)
+    ax = axes[0, 0]
+    x = np.arange(len(cols))
+    w = 0.8 / max(1, len(df))
+    for k, (split, r) in enumerate(df.iterrows()):
+        vals = [r.get(c, np.nan) for c in cols]
+        bars = ax.bar(x + k * w, vals, w, label=split,
+                      color=[SERIES["student"], SERIES["teacher"], SERIES["pred"]][k % 3])
+        for b, v in zip(bars, vals, strict=False):
+            ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.2f}", ha="center", va="bottom",
+                    fontsize=7)
+    ax.set_xticks(x + w * (len(df) - 1) / 2)
+    ax.set_xticklabels(cols, rotation=20, fontsize=8)
+    ax.set_ylim(0, 1.1)
+    ax.legend(title="split")
+    ax.set_title("Overall")
+    if per_class is not None:
+        ax2 = axes[0, 1]
+        y = np.arange(len(per_class))
+        ax2.barh(y - 0.2, per_class["mask_mAP50-95"], 0.4,
+                 color=[class_color(c) for c in per_class.class_name], label="mask")
+        ax2.barh(y + 0.2, per_class["box_mAP50-95"], 0.4, color="#bbbbbb", label="box")
+        ax2.set_yticks(y)
+        ax2.set_yticklabels(per_class.class_name)
+        ax2.set_xlim(0, 1)
+        ax2.set_xlabel("mAP50-95")
+        ax2.legend()
+        ax2.set_title("Per class")
+    fig.suptitle(title, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    return fig

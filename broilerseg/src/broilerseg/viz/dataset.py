@@ -220,3 +220,29 @@ def plot_motion_profile(motion: pd.DataFrame, chosen=None, ax=None,
     ax.set_ylabel("mean |difference|")
     ax.set_title(title + (" (orange = sampled frames)" if chosen else ""))
     return fig
+
+
+def plot_folder_summary(videos: pd.DataFrame, title: str = "Videos found in each sub-folder"):
+    """Videos, minutes and frames per sub-folder of the scanned folder tree."""
+    g = (videos.groupby("folder")
+         .agg(videos=("path", "size"), minutes=("duration_s", lambda s: s.sum() / 60),
+              frames=("n_frames", "sum"), unreadable=("readable", lambda r: int((~r).sum())))
+         .sort_index())
+    fig, axes = plt.subplots(1, 3, figsize=(17, 0.35 * len(g) + 2.2), sharey=True)
+    y = np.arange(len(g))
+    for ax, col, color in ((axes[0], "videos", SERIES["teacher"]),
+                           (axes[1], "minutes", SERIES["student"]),
+                           (axes[2], "frames", SERIES["neutral"])):
+        ax.barh(y, g[col], color=color)
+        for k, v in enumerate(g[col]):
+            ax.text(v, k, f" {v:,.0f}" if col != "minutes" else f" {v:.1f}", va="center",
+                    fontsize=7)
+        ax.set_title(col)
+    axes[0].set_yticks(y)
+    axes[0].set_yticklabels([f[:45] for f in g.index], fontsize=7)
+    axes[0].invert_yaxis()
+    bad = int(g.unreadable.sum())
+    fig.suptitle(f"{title}: {len(g)} folders, {int(g.videos.sum())} videos"
+                 + (f", {bad} unreadable" if bad else ""), fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    return fig

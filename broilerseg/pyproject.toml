@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "broilerseg"
-version = "0.1.0"
+version = "0.4.0"
 description = "SAM 3 mask labelling, SAM 3 -> YOLOv8-seg distillation and slice-based volumetric weight estimation for broilers on a scale."
 readme = "README.md"
 requires-python = ">=3.10"

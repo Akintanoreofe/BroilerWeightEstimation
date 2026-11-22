@@ -82,16 +82,22 @@ def plan_sampling(videos: pd.DataFrame, frames_per_video: int = 20, strategy: st
     for _, v in videos[videos.readable].iterrows():
         idx = sample_frame_indices(int(v.n_frames), frames_per_video, strategy, seed,
                                    v.path, skip_start)
-        rows += [{"video": v.path, "video_stem": v.stem, "frame_idx": i,
+        vid = v.video_id if "video_id" in v and isinstance(v.video_id, str) else v.stem
+        folder = v.folder if "folder" in v else "."
+        rows += [{"video": v.path, "video_stem": vid, "folder": folder, "frame_idx": i,
                   "n_frames": int(v.n_frames), "position": i / max(1, v.n_frames - 1)}
                  for i in idx]
-    return pd.DataFrame(rows, columns=["video", "video_stem", "frame_idx", "n_frames",
+    plan = pd.DataFrame(rows, columns=["video", "video_stem", "folder", "frame_idx", "n_frames",
                                        "position"])
+    if plan.drop_duplicates("video").video_stem.duplicated().any():
+        raise ValueError("Two videos map to the same id; pass the table from scan_videos()")
+    return plan
 
 
 def _row(stem: str, plan_row, result: SegmentationResult) -> dict:
     row = {"stem": stem, "image": f"frames/{stem}.jpg", "masks": f"masks/{stem}.npz",
            "video": plan_row.video, "video_stem": plan_row.video_stem,
+           "folder": getattr(plan_row, "folder", "."),
            "frame_idx": int(plan_row.frame_idx), "height": result.image_shape[0],
            "width": result.image_shape[1], "seconds": result.seconds}
     for c in CLASS_NAMES:

@@ -41,11 +41,33 @@ def video_info(path: str | Path) -> dict:
             "size_mb": path.stat().st_size / 1e6}
 
 
+def video_id(path: str | Path, root: str | Path) -> str:
+    """Return a unique, file-name-safe id: the path below ``root`` joined with ``__``.
+
+    ``root/day1/cam2/ch01.mp4`` -> ``day1__cam2__ch01``. Videos with the same
+    file name in different folders therefore never collide.
+    """
+    rel = Path(path).resolve().relative_to(Path(root).resolve()).with_suffix("")
+    return "__".join(part.replace(" ", "_") for part in rel.parts)
+
+
 def scan_videos(folder: str | Path, recursive: bool = True) -> pd.DataFrame:
-    """Inventory table of every video in a folder (one row per file)."""
-    rows = [video_info(p) for p in find_videos(folder, recursive)]
-    return pd.DataFrame(rows, columns=["path", "name", "stem", "readable", "n_frames", "fps",
-                                       "width", "height", "duration_s", "size_mb"])
+    """Inventory table of every video under ``folder`` (searched recursively).
+
+    Besides the video properties it records ``folder`` (the sub-folder below
+    ``folder``, ``"."`` for the top level), ``rel_path`` and ``video_id``
+    (unique across sub-folders).
+    """
+    root = Path(folder).expanduser()
+    rows = []
+    for p in find_videos(root, recursive):
+        info = video_info(p)
+        rel = p.resolve().relative_to(root.resolve())
+        info.update(rel_path=str(rel), folder=str(rel.parent), video_id=video_id(p, root))
+        rows.append(info)
+    return pd.DataFrame(rows, columns=["path", "name", "stem", "video_id", "folder", "rel_path",
+                                       "readable", "n_frames", "fps", "width", "height",
+                                       "duration_s", "size_mb"])
 
 
 def read_frame(path: str | Path, index: int, rgb: bool = True) -> np.ndarray:
