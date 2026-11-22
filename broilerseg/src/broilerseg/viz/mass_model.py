@@ -236,6 +236,9 @@ def plot_nested_choices(report, title: str = "Settings chosen when each event is
         ax.text(0.5, 0.5, "nested CV not run (needs >= 3 events)", ha="center")
         ax.axis("off")
         return fig
+    if len(n) > 40:
+        title += f" (first 40 of {len(n)} events)"
+        n = n.head(40)
     params = ["offset_px", "trim", "slice_count", "calib_method", "calib_scope", "b_mode"]
     fig, axes = plt.subplots(1, 2, figsize=(18, 0.45 * len(n) + 2.5),
                              gridspec_kw={"width_ratios": [2.2, 1]})

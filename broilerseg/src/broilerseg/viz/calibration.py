@@ -72,10 +72,16 @@ def plot_feeder_calibration(image: np.ndarray, cal: Calibration, feeder_mask: np
 
 
 def plot_calibration_stability(records: pd.DataFrame, value: str = "pixel_to_cm_frame",
-                               ax=None, title: str = "Is the scale stable within each video?"):
-    """Per-frame scale per video (dots), the median used (line) and CV %."""
-    fig, ax = new_ax(ax, (max(6, 0.6 * records.video_name.nunique() + 3), 4.5))
-    vids = sorted(records.video_name.unique())
+                               ax=None, title: str = "Is the scale stable within each video?",
+                               max_videos: int = 60):
+    """Per-frame scale per video (dots), the median used (line) and CV % (<= ``max_videos``)."""
+    all_vids = sorted(records.video_name.unique())
+    vids = all_vids
+    if len(all_vids) > max_videos:
+        keep = np.unique(np.linspace(0, len(all_vids) - 1, max_videos).astype(int))
+        vids = [all_vids[k] for k in keep]
+        title += f" (showing {len(vids)} of {len(all_vids)} videos)"
+    fig, ax = new_ax(ax, (max(6, 0.6 * len(vids) + 3), 4.5))
     rng = np.random.default_rng(0)
     for k, v in enumerate(vids):
         y = records.loc[records.video_name == v, value].to_numpy(float)
