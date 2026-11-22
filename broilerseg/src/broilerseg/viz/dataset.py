@@ -26,8 +26,11 @@ def plot_video_inventory(videos: pd.DataFrame, title: str = "Video folder at a g
     axes[0, 1].set_ylabel("frames")
     axes[0, 1].set_title(f"Frame count (total {int(v.n_frames.sum()):,})")
     for ax in (axes[0, 0], axes[0, 1]):
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=70, ha="right", fontsize=7)
+        if len(v) <= 60:
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=70, ha="right", fontsize=7)
+        else:
+            ax.set_xlabel(f"video # (1-{len(v)})")
     axes[1, 0].hist(v.fps, bins=15, color=SERIES["neutral"])
     axes[1, 0].set_xlabel("frames per second")
     axes[1, 0].set_title("Frame rate")
@@ -44,10 +47,24 @@ def plot_video_inventory(videos: pd.DataFrame, title: str = "Video folder at a g
     return fig
 
 
-def plot_sampling_plan(plan: pd.DataFrame, title: str = "Which frames will be labelled"):
-    """One line per video with a tick at each sampled frame."""
-    vids = list(dict.fromkeys(plan.video_stem))
-    fig, ax = plt.subplots(figsize=(12, 0.32 * len(vids) + 1.5))
+def plot_sampling_plan(plan: pd.DataFrame, title: str = "Which frames will be labelled",
+                       max_videos: int = 50):
+    """One line per video with a tick at each sampled frame (at most ``max_videos`` rows).
+
+    With more videos, an evenly spaced subset is drawn and a histogram on the
+    right summarises where the frames fall across *all* videos.
+    """
+    all_vids = list(dict.fromkeys(plan.video_stem))
+    vids = all_vids
+    if len(all_vids) > max_videos:
+        keep = np.unique(np.linspace(0, len(all_vids) - 1, max_videos).astype(int))
+        vids = [all_vids[k] for k in keep]
+    fig, (ax, ax_h) = plt.subplots(1, 2, figsize=(15, 0.32 * len(vids) + 1.5),
+                                   gridspec_kw={"width_ratios": [4, 1]})
+    ax_h.hist(plan.position, bins=20, orientation="horizontal", color=SERIES["pred"])
+    ax_h.set_xlabel("frames (all videos)")
+    ax_h.set_ylabel("position in video")
+    ax_h.set_title("All videos")
     for k, v in enumerate(vids):
         p = plan[plan.video_stem == v]
         ax.hlines(k, 0, 1, color="#dddddd", lw=6)
@@ -57,8 +74,10 @@ def plot_sampling_plan(plan: pd.DataFrame, title: str = "Which frames will be la
     ax.set_xlabel("position in video (0 = start, 1 = end)")
     ax.set_xlim(-0.02, 1.02)
     ax.invert_yaxis()
-    ax.set_title(f"{title}: {len(plan)} frames from {len(vids)} videos")
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    shown = (f" (showing {len(vids)} of {len(all_vids)} videos)"
+             if len(vids) < len(all_vids) else "")
+    ax.set_title(f"{title}: {len(plan)} frames from {len(all_vids)} videos{shown}")
+    fig.tight_layout()
     return fig
 
 
@@ -222,12 +241,19 @@ def plot_motion_profile(motion: pd.DataFrame, chosen=None, ax=None,
     return fig
 
 
-def plot_folder_summary(videos: pd.DataFrame, title: str = "Videos found in each sub-folder"):
-    """Videos, minutes and frames per sub-folder of the scanned folder tree."""
+def plot_folder_summary(videos: pd.DataFrame, title: str = "Videos found in each sub-folder",
+                        max_folders: int = 50):
+    """Videos, minutes and frames per sub-folder (largest ``max_folders``; the rest pooled)."""
     g = (videos.groupby("folder")
          .agg(videos=("path", "size"), minutes=("duration_s", lambda s: s.sum() / 60),
               frames=("n_frames", "sum"), unreadable=("readable", lambda r: int((~r).sum())))
          .sort_index())
+    n_folders, n_videos = len(g), int(g.videos.sum())
+    if len(g) > max_folders:
+        g = g.sort_values("videos", ascending=False)
+        rest = g.iloc[max_folders - 1:]
+        g = pd.concat([g.iloc[:max_folders - 1],
+                       pd.DataFrame([rest.sum()], index=[f"({len(rest)} other folders)"])])
     fig, axes = plt.subplots(1, 3, figsize=(17, 0.35 * len(g) + 2.2), sharey=True)
     y = np.arange(len(g))
     for ax, col, color in ((axes[0], "videos", SERIES["teacher"]),
@@ -242,7 +268,7 @@ def plot_folder_summary(videos: pd.DataFrame, title: str = "Videos found in each
     axes[0].set_yticklabels([f[:45] for f in g.index], fontsize=7)
     axes[0].invert_yaxis()
     bad = int(g.unreadable.sum())
-    fig.suptitle(f"{title}: {len(g)} folders, {int(g.videos.sum())} videos"
+    fig.suptitle(f"{title}: {n_folders} folders, {n_videos} videos"
                  + (f", {bad} unreadable" if bad else ""), fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     return fig
