@@ -137,3 +137,16 @@ def test_load_student_wraps_pen_crop(tmp_path, monkeypatch):
     assert isinstance(seg, CroppedSegmenter) and seg.imgsz == 480   # attribute pass-through
     seg2, _ = distill.load_student(tmp_path, pen_crop=False)
     assert isinstance(seg2, FakeYolo)
+
+
+def test_stage1_survives_unreadable_frames(tmp_path):
+    p = make_demo_data(tmp_path / "d", n_events=2, frames_per_event=3, nested=True)
+    vids = scan_videos(p["videos"])
+    vids.loc[0, "n_frames"] = 10_000                        # header claims far more frames
+    bad = tmp_path / "broken.mp4"
+    bad.write_bytes(b"not a video")
+    vids = pd.concat([vids, vids.iloc[[0]].assign(path=str(bad), video_id="broken")],
+                     ignore_index=True)
+    rois = find_pen_rois(vids, ColorPenDetector(), 2, progress=False)
+    assert rois.set_index("video_id").loc[vids.video_id[0], "method"] == "auto"
+    assert rois.set_index("video_id").loc["broken", "method"] == "folder_median"

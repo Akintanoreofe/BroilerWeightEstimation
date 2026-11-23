@@ -77,16 +77,44 @@ def scan_videos(folder: str | Path, recursive: bool = True) -> pd.DataFrame:
 
 
 def read_frame(path: str | Path, index: int, rgb: bool = True) -> np.ndarray:
-    """Read one frame by zero-based index."""
+    """Read one frame by zero-based index.
+
+    Jumping straight to a frame fails on some CCTV / recovered H.265 files; the
+    video is then decoded from the start up to ``index`` instead.
+    """
     cap = cv2.VideoCapture(str(path))
     try:
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(index))
         ok, frame = cap.read()
     finally:
         cap.release()
-    if not ok:
-        raise RuntimeError(f"Cannot read frame {index} of {path}")
+    if not ok:  # seek failed: decode sequentially
+        cap = cv2.VideoCapture(str(path))
+        try:
+            i, ok = -1, True
+            while ok and i < int(index):
+                ok = cap.grab()
+                i += 1
+            ok, frame = cap.retrieve() if ok else (False, None)
+        finally:
+            cap.release()
+        if not ok:
+            raise RuntimeError(f"Cannot read frame {index} of {path} (the file has only "
+                               f"{max(i, 0)} readable frames or is damaged)")
     return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if rgb else frame
+
+
+def safe_read_frame(path: str | Path, index: int, rgb: bool = True) -> np.ndarray | None:
+    """Like :func:`read_frame`, but tries earlier frames and returns None instead of failing.
+
+    Tries ``index``, then ``index // 2``, then frame 0.
+    """
+    for i in dict.fromkeys((int(index), int(index) // 2, 0)):
+        try:
+            return read_frame(path, i, rgb)
+        except RuntimeError:
+            continue
+    return None
 
 
 def iter_frames(path: str | Path, indices=None, rgb: bool = True

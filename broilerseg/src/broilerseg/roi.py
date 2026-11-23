@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 from broilerseg.config import PEN_PROMPTS, PromptConfig
-from broilerseg.io.video import read_frame
+from broilerseg.io.video import safe_read_frame
 from broilerseg.segmentation.base import Instance, SegmentationResult, Segmenter
 
 #: Grey used to blank out everything outside the pen outline (YOLO's padding grey).
@@ -341,9 +341,9 @@ def detect_pen_roi(frames, detector, margin: float = 0.03, min_area: float = 0.0
 
 
 # =========================================================================== per video
-def _sample_positions(n_frames: int, k: int) -> list[int]:
+def _sample_positions(n_frames, k: int) -> list[int]:
     """``k`` frame indices spread over the middle of a video."""
-    if n_frames <= 1:
+    if not n_frames or pd.isna(n_frames) or n_frames <= 1:
         return [0]
     pos = np.linspace(0.2, 0.8, max(1, k))
     return sorted({int(round(p * (n_frames - 1))) for p in pos})
@@ -413,14 +413,14 @@ def find_pen_rois(videos: pd.DataFrame, detector, frames_per_video: int = 2,
         frames = []
         if scope == "video":
             r = g.iloc[0]
-            frames = [read_frame(r.path, i) for i in _sample_positions(int(r.n_frames),
-                                                                       frames_per_video)]
+            frames = [safe_read_frame(r.path, i)
+                      for i in _sample_positions(r.n_frames, frames_per_video)]
         else:  # spread over the folder's videos
             pick = g.iloc[np.linspace(0, len(g) - 1, min(len(g), frames_per_video)).astype(int)]
             reps = int(np.ceil(frames_per_video / len(pick)))
             for r in pick.itertuples():
-                frames += [read_frame(r.path, i) for i in _sample_positions(int(r.n_frames),
-                                                                            reps)]
+                frames += [safe_read_frame(r.path, i)
+                           for i in _sample_positions(r.n_frames, reps)]
             frames = frames[:max(1, frames_per_video)]
         frames = [f for f in frames if f is not None]
         roi, diag = (detect_pen_roi(frames, detector, margin, min_area, max_area, prefer)

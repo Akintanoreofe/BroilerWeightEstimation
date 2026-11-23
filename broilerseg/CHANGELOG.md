@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 (2026-11-23)
+
+* `read_frame` decodes from the start when jumping to a frame fails (damaged or recovered
+  H.265 files, wrong frame counts); new `safe_read_frame` returns None instead of failing.
+* Stage 1 (`find_pen_rois`) skips unreadable frames; a video with none gets its folder's
+  median pen region instead of stopping the run.
+
 ## 0.5.0 (2026-11-23)
 
 * **Two-stage segmentation** (new `broilerseg.roi`). Stage 1 finds the pen with a text prompt

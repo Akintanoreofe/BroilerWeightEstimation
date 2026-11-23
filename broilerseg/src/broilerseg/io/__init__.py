@@ -11,6 +11,7 @@ from broilerseg.io.video import (
     iter_frames,
     motion_scores,
     read_frame,
+    safe_read_frame,
     sample_frame_indices,
     scan_videos,
     video_info,
@@ -18,6 +19,7 @@ from broilerseg.io.video import (
 
 __all__ = [
     "FlockLabelExport", "iter_sample_images", "load_flocklabel_export", "subsample_per_event",
-    "find_videos", "iter_frames", "motion_scores", "read_frame", "sample_frame_indices",
+    "find_videos", "iter_frames", "motion_scores", "read_frame", "safe_read_frame",
+    "sample_frame_indices",
     "scan_videos", "video_info",
 ]
