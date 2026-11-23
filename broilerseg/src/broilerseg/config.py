@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 #: Feeder (feeding pan) diameter: 14 inches, as in ``src/FeederCalibration.py``.
 FEEDER_DIAMETER_CM: float = 14 * 2.54  # 35.56 cm
 
+#: Stage-1 text prompts for the pen region (two-stage labelling, see ``roi.py``).
+#: SAM 3 and Grounding DINO respond best to short noun phrases; edit in a notebook.
+PEN_PROMPTS: tuple[str, ...] = ("animal pen", "wood shavings bedding", "fenced enclosure")
+
 #: Segmentation classes, in YOLO class-id order.
 CLASS_NAMES: tuple[str, ...] = ("broiler", "scale", "feeder")
 

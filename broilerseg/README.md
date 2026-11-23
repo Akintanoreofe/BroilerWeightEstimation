@@ -63,6 +63,22 @@ Each notebook **prompts you to paste a folder path**. To skip the prompt, set th
 
 ---
 
+## Two-stage segmentation (pen crop)
+
+```
+full 4K frame --stage 1: "animal pen" prompt--> pen box --crop, full resolution-->
+pen crop --stage 2: broiler / scale / feeder--> masks (pasted back to full-frame coordinates)
+```
+
+```python
+from broilerseg.segmentation import load_teacher
+from broilerseg.roi import CroppedSegmenter, PenDetector
+
+teacher = load_teacher("sam3")                       # or "grounded_sam2"
+seg = CroppedSegmenter(teacher, detector=PenDetector(teacher))
+result = seg.segment(frame_rgb)                      # masks in full-frame coordinates
+```
+
 ## Package layout
 
 ```

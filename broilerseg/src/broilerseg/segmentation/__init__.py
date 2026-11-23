@@ -20,14 +20,15 @@ from broilerseg.segmentation.postprocess import (
 TEACHERS = ("grounded_sam2", "sam3")
 
 
-def load_teacher(name: str = "grounded_sam2", **kwargs):
+def load_teacher(name: str = "sam3", **kwargs):
     """Create a teacher segmenter by name.
 
     Parameters
     ----------
-    name : {"grounded_sam2", "sam3"}
+    name : {"sam3", "grounded_sam2"}
+        ``sam3`` (default): Meta's SAM 3, gated (needs approved access).
         ``grounded_sam2``: Grounding DINO + SAM 2.1, public models, no access
-        request. ``sam3``: Meta's SAM 3, gated (needs approved access).
+        request. Both work with the two-stage pen crop (:mod:`broilerseg.roi`).
     **kwargs
         Passed to the segmenter (e.g. ``prompts``, ``device``, ``max_side``,
         and for Grounded SAM 2 ``dino="tiny"``, ``sam2="base_plus"``,

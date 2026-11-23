@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
-import cv2
-import numpy as np
-import pandas as pd
+# Silence harmless FFmpeg HEVC header warnings from CCTV/NVR files
+# (e.g. "vps_reserved_ffff_16bits is not 0xffff"). Must be set before cv2 loads.
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".m4v", ".wmv", ".mpg", ".mpeg")
 

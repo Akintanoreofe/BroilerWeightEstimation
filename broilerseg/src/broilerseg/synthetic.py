@@ -83,6 +83,39 @@ class ColorSegmenter:
         return SegmentationResult((h, w), inst, time.perf_counter() - t0, self.name)
 
 
+def surround_scene(img: np.ndarray, width: int = 160, seed: int = 0) -> np.ndarray:
+    """Add a strip of concrete floor and a desk left of the pen (stage-1 demo)."""
+    rng = np.random.default_rng(seed)
+    h = img.shape[0]
+    side = np.empty((h, width, 3), np.float32)
+    side[:] = (150, 150, 152)
+    side += rng.normal(0, 6, side.shape)
+    side[h // 5: h // 2, 15: width - 30] = (60, 62, 70)        # desk / computer
+    side[:, width - 8:] = (235, 235, 235)                       # white fence rail
+    return np.hstack([np.clip(side, 0, 255).astype(np.uint8), img])
+
+
+class ColorPenDetector:
+    """Stage-1 stand-in: the pen is the litter-coloured region of a synthetic frame."""
+
+    name = "ColorPenDetector (synthetic)"
+
+    def segment(self, image_rgb: np.ndarray) -> SegmentationResult:
+        """Return one ``"pen"`` instance (the litter area)."""
+        t0 = time.perf_counter()
+        img = cv2.medianBlur(image_rgb, 5).astype(np.int16)
+        h, w = img.shape[:2]
+        litter = (np.abs(img - np.array((95, 75, 55))).max(axis=2) < 35).astype(np.uint8)
+        litter = cv2.morphologyEx(litter, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+        n, lab, stats, _ = cv2.connectedComponentsWithStats(litter)
+        inst = []
+        if n > 1:
+            k = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+            mk = lab == k
+            inst.append(Instance("pen", mk, 0.95, box_from_mask(mk), "litter colour"))
+        return SegmentationResult((h, w), inst, time.perf_counter() - t0, self.name)
+
+
 def _bird_weight_kg(a_px, b_px, px_to_cm, density=1000.0, depth_ratio=0.8):
     """Weight of an ellipsoid bird (semi-axes a, b, c = depth_ratio * b)."""
     a, b = a_px * px_to_cm, b_px * px_to_cm
@@ -95,7 +128,9 @@ def make_demo_data(out_dir: str | Path, n_events: int = 6, frames_per_event: int
     """Write synthetic videos and a FlockLabel evaluation export.
 
     With ``nested=True`` the raw videos go into ``day<k>/cam<j>/`` sub-folders
-    and several share the same file name, like real CCTV dumps.
+    and several share the same file name, like real CCTV dumps, and each raw
+    frame gets a strip of floor and a desk left of the pen (so the stage-1 pen
+    crop has something to remove).
 
     Returns
     -------
@@ -124,7 +159,9 @@ def make_demo_data(out_dir: str | Path, n_events: int = 6, frames_per_event: int
         raw_path = (vids / f"day{e // 2 + 1}" / f"cam{e % 2 + 1}" / "ch01.mp4") if nested \
             else vids / name
         raw_path.parent.mkdir(parents=True, exist_ok=True)
-        raw = cv2.VideoWriter(str(raw_path), cv2.VideoWriter_fourcc(*"mp4v"), 10, (w, h))
+        side = 160 if nested else 0
+        raw = cv2.VideoWriter(str(raw_path), cv2.VideoWriter_fourcc(*"mp4v"), 10,
+                              (w + side, h))
         other = (((80, 380), (50, 25), 20.0),)
         for f in range(frames_per_event):
             cx = 400 + 15 * np.sin(f / 3)
@@ -133,7 +170,8 @@ def make_demo_data(out_dir: str | Path, n_events: int = 6, frames_per_event: int
             img = draw_scene(h, w, ((cx, cy), (a, b), ang), other, feeder, scale, seed + f)
             bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             writer.write(bgr)
-            raw.write(bgr)
+            raw.write(cv2.cvtColor(surround_scene(img, side, seed + f), cv2.COLOR_RGB2BGR)
+                      if side else bgr)
             mk = np.zeros((h, w), np.uint8)
             cv2.ellipse(mk, (int(cx), int(cy)), (int(a), int(b)), ang, 0, 360, 1, -1)
             x1, y1, x2, y2 = box_from_mask(mk.astype(bool))

@@ -148,17 +148,23 @@ def path_size_mb(path: str | Path) -> float:
 
 # ----------------------------------------------------------------- evaluate / save / load
 def evaluate_student(weights: str | Path, data_yaml: str | Path, split: str = "val",
-                     imgsz: int = 640, device: str | None = None) -> tuple[dict, pd.DataFrame]:
+                     imgsz: int = 640, device: str | None = None,
+                     project: str | Path | None = None) -> tuple[dict, pd.DataFrame]:
     """Ultralytics validation of the student on a dataset split.
 
     Returns overall box / mask metrics and a per-class table (mask and box
-    mAP50-95). The validation plots are written to Ultralytics' run folder.
+    mAP50-95). The validation plots go to ``project/<split>``; by default
+    ``project`` is an ``evaluation`` folder next to the training run
+    (never the current working directory, which may be read-only).
     """
     from ultralytics import YOLO
 
+    if project is None:
+        project = Path(weights).expanduser().resolve().parent.parent / "evaluation"
     model = YOLO(str(weights))
     r = model.val(data=str(data_yaml), split=split, imgsz=imgsz, plots=True,
-                  device=device or pick_train_device(), verbose=False)
+                  device=device or pick_train_device(), verbose=False,
+                  project=str(project), name=split, exist_ok=True)
     overall = {"split": split,
                "mask_mAP50": float(r.seg.map50), "mask_mAP50-95": float(r.seg.map),
                "mask_precision": float(r.seg.mp), "mask_recall": float(r.seg.mr),
@@ -220,7 +226,7 @@ def save_student(run_dir: str | Path, out_dir: str | Path, name: str = "broiler_
 
 
 def load_student(model_dir: str | Path, fmt: str = "pt", conf: float = 0.25,
-                 device: str | None = None):
+                 device: str | None = None, pen_crop: bool | None = None):
     """Load a model saved by :func:`save_student`.
 
     Parameters
@@ -233,10 +239,15 @@ def load_student(model_dir: str | Path, fmt: str = "pt", conf: float = 0.25,
         Detection confidence threshold.
     device : str, optional
         Torch device; Ultralytics picks one if omitted.
+    pen_crop : bool, optional
+        If the model was trained on pen crops (two-stage labelling), wrap it in
+        :class:`broilerseg.roi.CroppedSegmenter` with the pen region saved in
+        the model card, so it gets the same view it was trained on and returns
+        full-frame masks. ``None`` follows the card; ``False`` uses whole frames.
 
     Returns
     -------
-    (YoloSegmenter, dict)
+    (YoloSegmenter or CroppedSegmenter, dict)
         The segmenter and the model card.
     """
     import json
@@ -255,4 +266,11 @@ def load_student(model_dir: str | Path, fmt: str = "pt", conf: float = 0.25,
     if not target.exists():
         raise FileNotFoundError(f"{target} not found in {p}; available: "
                                 f"{sorted(x.name for x in p.iterdir())}")
-    return YoloSegmenter(target, imgsz=imgsz, conf=conf, device=device), card
+    seg = YoloSegmenter(target, imgsz=imgsz, conf=conf, device=device)
+    use_crop = card.get("pen_crop", False) if pen_crop is None else pen_crop
+    if use_crop and card.get("pen_roi"):
+        from broilerseg.roi import CroppedSegmenter, PenROI
+
+        seg = CroppedSegmenter(seg, PenROI.from_dict(card["pen_roi"]),
+                               mask_outside=bool(card.get("pen_mask_outside", False)))
+    return seg, card

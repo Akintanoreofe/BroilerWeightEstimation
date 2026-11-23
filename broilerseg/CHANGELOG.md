@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 (2026-11-23)
+
+* **Two-stage segmentation** (new `broilerseg.roi`). Stage 1 finds the pen with a text prompt
+  (`PEN_PROMPTS`, same teacher model) and crops it at full resolution. Stage 2 segments
+  broiler / scale / feeder inside the crop only. `PenROI` (box + outline, stored as frame
+  fractions), `PenDetector`, `find_pen_rois` (per video or per folder, resumable, manual
+  overrides with `apply_manual_rois`), `CroppedSegmenter` (any segmenter on the crop,
+  full-frame masks out).
+* `auto_label_videos(rois=..., mask_outside=...)` saves pen crops and records their position
+  in the manifest. It refuses to mix cropped and uncropped labels in one folder.
+* `load_student` applies the pen region saved in the model card, so Notebook 3 and the
+  Raspberry Pi crop exactly as in training (`pen_crop=False` to switch off).
+* SAM 3 is now the default teacher (`load_teacher()`); Grounded SAM 2 is still available.
+* Notebook 2: `ONLY_RESOLUTION` (e.g. 3840 x 2160 only), new stage-1 section (candidates,
+  pixel grid, regions, crops, one- vs two-stage comparison), labels in `labels_pen/`, and the
+  pen region is saved with the model. Notebooks 1 and 3: optional / automatic pen crop.
+* New plots: `plot_pen_candidates`, `plot_pen_rois`, `plot_pen_crops`, `plot_roi_summary`,
+  `plot_two_stage`.
+* `evaluate_student` writes its plots next to the training run (not the working folder).
+* FFmpeg HEVC header warnings are silenced.
+
 ## 0.4.1 (2026-11-22)
 
 * Plots that grew with the data are capped (sampling plan, folder summary, video inventory,
