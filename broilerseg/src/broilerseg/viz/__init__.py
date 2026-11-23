@@ -10,6 +10,7 @@ dataset      video inventory, sampling plan, label statistics, YOLO dataset chec
 mass_model   fitted mass equation, sensitivity, density estimate
 metrics      weight accuracy, error analysis, density / slice sweeps, method comparison
 training     YOLO training curves, teacher vs student agreement, speed
+roi          stage 1 of two-stage labelling: pen regions and crops
 """
 
 from broilerseg.viz.calibration import (
@@ -60,6 +61,13 @@ from broilerseg.viz.overlays import (
     plot_overlay,
     plot_score_distributions,
     plot_segmentation_panels,
+)
+from broilerseg.viz.roi import (
+    plot_pen_candidates,
+    plot_pen_crops,
+    plot_pen_rois,
+    plot_roi_summary,
+    plot_two_stage,
 )
 from broilerseg.viz.style import (
     fmt_weight,
@@ -120,7 +128,12 @@ __all__ = [
     "plot_method_comparison",
     "plot_motion_profile",
     "plot_overlay",
+    "plot_pen_candidates",
+    "plot_pen_crops",
+    "plot_pen_rois",
     "plot_per_event",
+    "plot_roi_summary",
+    "plot_two_stage",
     "plot_pred_vs_actual",
     "plot_sampling_plan",
     "plot_score_distributions",

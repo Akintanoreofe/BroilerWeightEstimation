@@ -7,6 +7,10 @@ Output layout (``out_dir``)::
     overlays/<video-stem>_f000123.jpg   quick-look overlay (optional)
     manifest.csv                        one row per frame with counts, scores, areas
 
+With ``rois`` (stage 1, :mod:`broilerseg.roi`) the saved frames and masks are
+the **pen crops**, and ``roi_x0 ... roi_y1`` in the manifest give where each
+crop sits in the full frame.
+
 Re-running skips frames whose ``.npz`` already exists, so a long labelling run
 can be interrupted and resumed.
 """
@@ -94,7 +98,8 @@ def plan_sampling(videos: pd.DataFrame, frames_per_video: int = 20, strategy: st
     return plan
 
 
-def _row(stem: str, plan_row, result: SegmentationResult) -> dict:
+def _row(stem: str, plan_row, result: SegmentationResult, roi_px=None,
+         full_shape=None) -> dict:
     row = {"stem": stem, "image": f"frames/{stem}.jpg", "masks": f"masks/{stem}.npz",
            "video": plan_row.video, "video_stem": plan_row.video_stem,
            "folder": getattr(plan_row, "folder", "."),
@@ -105,6 +110,10 @@ def _row(stem: str, plan_row, result: SegmentationResult) -> dict:
         row[f"n_{c}"] = len(found)
         row[f"score_{c}"] = max((i.score for i in found), default=np.nan)
         row[f"area_{c}"] = int(sum(i.area for i in found))
+    row["cropped"] = roi_px is not None
+    if roi_px is not None:
+        row.update(roi_x0=roi_px[0], roi_y0=roi_px[1], roi_x1=roi_px[2], roi_y1=roi_px[3],
+                   full_height=full_shape[0], full_width=full_shape[1])
     return row
 
 
@@ -112,7 +121,8 @@ def auto_label_videos(video_dir: str | Path, out_dir: str | Path, segmenter: Seg
                       frames_per_video: int = 20, strategy: str = "uniform", seed: int = 0,
                       skip_start: int = 0, save_overlays: bool = True,
                       plan: pd.DataFrame | None = None, jpeg_quality: int = 95,
-                      progress: bool = True) -> pd.DataFrame:
+                      progress: bool = True, rois=None,
+                      mask_outside: bool = False) -> pd.DataFrame:
     """Sample frames from every video and label them with ``segmenter``.
 
     Parameters
@@ -137,6 +147,12 @@ def auto_label_videos(video_dir: str | Path, out_dir: str | Path, segmenter: Seg
         Show a progress bar (needs ``tqdm``).
     plan : pandas.DataFrame, optional
         A sampling plan from :func:`plan_sampling`; overrides the arguments above.
+    rois : pandas.DataFrame or dict, optional
+        Stage-1 pen regions (:func:`broilerseg.roi.find_pen_rois`). Each frame
+        is cropped to its video's pen before the teacher runs, and the crop is
+        what gets saved. Videos without a region are labelled uncropped.
+    mask_outside : bool
+        With ``rois``: grey out what lies inside the crop but outside the pen.
 
     Returns
     -------
@@ -152,6 +168,13 @@ def auto_label_videos(video_dir: str | Path, out_dir: str | Path, segmenter: Seg
     manifest_path = out / "manifest.csv"
     old = pd.read_csv(manifest_path) if manifest_path.is_file() else pd.DataFrame()
     done = set(old.stem) if "stem" in old else set()
+    from broilerseg.roi import rois_lookup
+
+    lookup = rois_lookup(rois)
+    if len(old) and bool(lookup) != bool(old.get("cropped", pd.Series([False])).any()):
+        raise ValueError(
+            f"{out} already holds {'cropped' if not lookup else 'uncropped'} labels. Use a "
+            "different out_dir for labels made with a different pen-crop setting.")
     rows = []
     groups = list(plan.groupby("video", sort=False))
     bar = None
@@ -171,6 +194,11 @@ def auto_label_videos(video_dir: str | Path, out_dir: str | Path, segmenter: Seg
                 if bar:
                     bar.update(1)
                 continue
+            full_shape, roi_px = frame.shape[:2], None
+            roi = lookup.get(r.video_stem)
+            if roi is not None:
+                roi_px = roi.pixels(full_shape)
+                frame = roi.crop(frame, mask_outside)
             result = segmenter.segment(frame)
             cv2.imwrite(str(out / "frames" / f"{stem}.jpg"),
                         cv2.cvtColor(frame, cv2.COLOR_RGB2BGR),
@@ -179,7 +207,7 @@ def auto_label_videos(video_dir: str | Path, out_dir: str | Path, segmenter: Seg
             if save_overlays:
                 cv2.imwrite(str(out / "overlays" / f"{stem}.jpg"),
                             cv2.cvtColor(render_overlay(frame, result), cv2.COLOR_RGB2BGR))
-            rows.append(_row(stem, r, result))
+            rows.append(_row(stem, r, result, roi_px, full_shape))
             if bar:
                 bar.update(1)
     if bar:
