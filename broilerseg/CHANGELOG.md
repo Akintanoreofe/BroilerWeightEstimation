@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3 (2026-11-23)
+
+* `patch_nms_time_limit` (applied by `train_student` and `evaluate_student`): Ultralytics'
+  NMS gets 1 s per image instead of 0.05 s, so validation on crowded pen crops is no longer
+  cut short ("NMS time limit exceeded"), which made recall, mAP, early stopping and the
+  choice of `best.pt` unreliable.
+
 ## 0.5.2 (2026-11-23)
 
 * `train_student` finds the starting weights locally (`~/broilerseg_models/base/`) and, if

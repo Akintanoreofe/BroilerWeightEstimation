@@ -111,6 +111,50 @@ def patch_mps_assigner() -> bool:
     return True
 
 
+def patch_nms_time_limit(max_time_img: float = 1.0) -> bool:
+    """Give Ultralytics' NMS more time per image during validation.
+
+    Ultralytics stops NMS after ``2.0 + max_time_img * batch`` seconds
+    (``max_time_img = 0.05`` by default) and silently drops the detections it
+    has not processed ("NMS time limit exceeded"). With ~30 birds per crop
+    and an untrained model on a Mac, every validation batch hits that limit,
+    so recall, mAP, early stopping and the choice of ``best.pt`` are all
+    distorted. This raises ``max_time_img`` (default 1 s per image). Safe to
+    call more than once; returns False if this Ultralytics version has no
+    such setting.
+    """
+    import importlib
+    import inspect
+    import sys
+
+    patched = False
+    for mod_name in ("ultralytics.utils.nms", "ultralytics.utils.ops"):
+        try:
+            mod = importlib.import_module(mod_name)
+        except ImportError:
+            continue
+        orig = getattr(mod, "non_max_suppression", None)
+        if orig is None:
+            continue
+        orig = getattr(orig, "_broilerseg_orig", orig)
+        if "max_time_img" not in inspect.signature(orig).parameters:
+            continue
+
+        def nms(*args, _orig=orig, **kwargs):
+            kwargs["max_time_img"] = max(float(kwargs.get("max_time_img", 0.05)), max_time_img)
+            return _orig(*args, **kwargs)
+
+        nms._broilerseg_orig = orig
+        # replace it wherever it was imported by name, too
+        for m in list(sys.modules.values()):
+            if getattr(m, "__name__", "").startswith("ultralytics") and \
+                    getattr(getattr(m, "non_max_suppression", None), "_broilerseg_orig",
+                            getattr(m, "non_max_suppression", None)) is orig:
+                m.non_max_suppression = nms
+        patched = True
+    return patched
+
+
 def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epochs: int = 100,
                   imgsz: int = 640, batch: int = 16, device: str | None = None,
                   project: str | Path = "runs/broilerseg", name: str = "student",
@@ -131,6 +175,8 @@ def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epo
     device : str, optional
         Defaults to :func:`pick_train_device`. On ``"mps"`` the Apple-GPU
         workaround :func:`patch_mps_assigner` is applied automatically.
+        :func:`patch_nms_time_limit` is always applied, so validation is not
+        cut short on crowded images.
     project, name : str
         Output folder is ``project/name``.
     **overrides
@@ -146,6 +192,7 @@ def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epo
     device = device or pick_train_device()
     if str(device) == "mps":
         patch_mps_assigner()
+    patch_nms_time_limit()
     model = YOLO(resolve_base_model(base_model))
     args = {"data": str(data_yaml), "epochs": epochs, "imgsz": imgsz, "batch": batch,
             "device": device, "project": str(project), "name": name,
@@ -246,6 +293,7 @@ def evaluate_student(weights: str | Path, data_yaml: str | Path, split: str = "v
 
     if project is None:
         project = Path(weights).expanduser().resolve().parent.parent / "evaluation"
+    patch_nms_time_limit()
     model = YOLO(str(weights))
     r = model.val(data=str(data_yaml), split=split, imgsz=imgsz, plots=True,
                   device=device or pick_train_device(), verbose=False,
