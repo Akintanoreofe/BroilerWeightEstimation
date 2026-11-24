@@ -27,7 +27,7 @@ from broilerseg.config import (
 )
 from broilerseg.volume import VolumeEstimate, estimate_volume, mask_slice_profile
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = [
     "CLASS_NAMES", "DEFAULT_DENSITY_KG_M3", "FEEDER_DIAMETER_CM", "PromptConfig", "VolumeConfig",

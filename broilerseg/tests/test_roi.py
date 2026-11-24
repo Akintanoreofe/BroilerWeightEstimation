@@ -150,3 +150,16 @@ def test_stage1_survives_unreadable_frames(tmp_path):
     rois = find_pen_rois(vids, ColorPenDetector(), 2, progress=False)
     assert rois.set_index("video_id").loc[vids.video_id[0], "method"] == "auto"
     assert rois.set_index("video_id").loc["broken", "method"] == "folder_median"
+
+
+def test_resolve_base_model_uses_local_copy(tmp_path, monkeypatch):
+    from broilerseg.distill import resolve_base_model
+
+    monkeypatch.chdir(tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "yolov8n-seg.pt").write_bytes(b"x" * 2_000_000)
+    assert resolve_base_model("yolov8n-seg.pt", base) == str(base / "yolov8n-seg.pt")
+    assert resolve_base_model("yolov8n-seg.yaml", base) == "yolov8n-seg.yaml"
+    with pytest.raises(FileNotFoundError):
+        resolve_base_model(tmp_path / "nowhere" / "x.pt", base)

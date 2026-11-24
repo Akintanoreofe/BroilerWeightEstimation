@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 (2026-11-23)
+
+* `train_student` finds the starting weights locally (`~/broilerseg_models/base/`) and, if
+  missing, downloads them there once with resumable retries (`resolve_base_model`), so an
+  unstable network no longer stops training ("Curl return value 56").
+* `train_student` applies the Apple-GPU workaround `patch_mps_assigner` automatically when
+  training on `mps` (the "shape mismatch ... cannot be broadcast" crash).
+
 ## 0.5.1 (2026-11-23)
 
 * `read_frame` decodes from the start when jumping to a frame fails (damaged or recovered

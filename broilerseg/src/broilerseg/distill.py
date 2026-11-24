@@ -32,6 +32,85 @@ def pick_train_device() -> str:
     return "cpu"
 
 
+#: Where :func:`resolve_base_model` keeps downloaded starting weights.
+BASE_WEIGHTS_DIR = Path("~/broilerseg_models/base")
+_ASSETS_URL = "https://github.com/ultralytics/assets/releases/download/v8.4.0/"
+
+
+def resolve_base_model(base_model: str | Path, weights_dir: str | Path = BASE_WEIGHTS_DIR,
+                       retries: int = 10) -> str:
+    """Local path of the starting weights, downloading them once if needed.
+
+    A full path (``~`` allowed) is used as is. A bare name such as
+    ``yolov8n-seg.pt`` is looked up in the working folder, then in
+    ``weights_dir`` (``~/broilerseg_models/base``); if missing it is downloaded
+    there with retries that resume where a dropped connection stopped
+    (Ultralytics' own download gives up on unstable networks, "Curl return
+    value 56"). Model definitions (``.yaml``) are returned unchanged.
+    """
+    p = Path(str(base_model)).expanduser()
+    if p.suffix != ".pt" or p.is_file():
+        return str(p)
+    if p.parent != Path("."):
+        raise FileNotFoundError(f"Starting weights not found: {p}")
+    target = Path(weights_dir).expanduser() / p.name
+    if target.is_file() and target.stat().st_size > 1e6:
+        return str(target)
+    import urllib.request
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    url = _ASSETS_URL + p.name
+    for attempt in range(1, retries + 1):
+        have = target.stat().st_size if target.exists() else 0
+        try:
+            req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
+            with urllib.request.urlopen(req, timeout=60) as r, \
+                    open(target, "ab" if have and r.status == 206 else "wb") as f:
+                while chunk := r.read(1 << 16):
+                    f.write(chunk)
+            if target.stat().st_size > 1e6:
+                print(f"Downloaded {p.name} -> {target}")
+                return str(target)
+        except Exception as e:  # noqa: BLE001 - network errors of every kind: retry
+            print(f"download attempt {attempt}/{retries} failed ({e}); retrying ...")
+            time.sleep(min(30, 3 * attempt))
+    raise ConnectionError(
+        f"Could not download {url}. Download it in a browser and save it as {target}, "
+        f"or set BASE_MODEL to the file's full path.")
+
+
+def patch_mps_assigner() -> bool:
+    """Work around an Apple-GPU (MPS) bug in Ultralytics' label matching.
+
+    On MPS the task-aligned assigner can crash with "shape mismatch: value
+    tensor of shape [...] cannot be broadcast to indexing result". The patch
+    runs only that step on the CPU; the network keeps training on the GPU.
+    Safe to call more than once. Returns True if the patch is active.
+    """
+    import torch
+    from ultralytics.utils import tal
+
+    cls = tal.TaskAlignedAssigner
+    if getattr(cls, "_broilerseg_cpu_on_mps", False):
+        return True
+    orig = cls.forward
+
+    def forward(self, *args, **kwargs):
+        dev = next((a.device for a in args if torch.is_tensor(a)), None)
+        if dev is None or dev.type != "mps":
+            return orig(self, *args, **kwargs)
+
+        def to_cpu(a):
+            return a.cpu() if torch.is_tensor(a) else a
+
+        out = orig(self, *map(to_cpu, args), **{k: to_cpu(v) for k, v in kwargs.items()})
+        return tuple(t.to(dev) if torch.is_tensor(t) else t for t in out)
+
+    cls.forward = forward
+    cls._broilerseg_cpu_on_mps = True
+    return True
+
+
 def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epochs: int = 100,
                   imgsz: int = 640, batch: int = 16, device: str | None = None,
                   project: str | Path = "runs/broilerseg", name: str = "student",
@@ -43,12 +122,15 @@ def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epo
     data_yaml : path-like
         ``data.yaml`` from :func:`broilerseg.yolo_dataset.build_yolo_dataset`.
     base_model : str
-        COCO-pretrained start point: ``yolov8n-seg.pt`` (Pi), ``yolov8s-seg.pt``.
+        COCO-pretrained start point: ``yolov8n-seg.pt`` (Pi), ``yolov8s-seg.pt``,
+        or a full path. Bare names are fetched once into ``~/broilerseg_models/base``
+        (see :func:`resolve_base_model`).
     epochs, imgsz, batch, patience : int
         Usual Ultralytics settings; ``patience`` stops early when validation
         stops improving.
     device : str, optional
-        Defaults to :func:`pick_train_device`.
+        Defaults to :func:`pick_train_device`. On ``"mps"`` the Apple-GPU
+        workaround :func:`patch_mps_assigner` is applied automatically.
     project, name : str
         Output folder is ``project/name``.
     **overrides
@@ -61,9 +143,12 @@ def train_student(data_yaml: str | Path, base_model: str = "yolov8n-seg.pt", epo
     """
     from ultralytics import YOLO
 
-    model = YOLO(base_model)
+    device = device or pick_train_device()
+    if str(device) == "mps":
+        patch_mps_assigner()
+    model = YOLO(resolve_base_model(base_model))
     args = {"data": str(data_yaml), "epochs": epochs, "imgsz": imgsz, "batch": batch,
-            "device": device or pick_train_device(), "project": str(project), "name": name,
+            "device": device, "project": str(project), "name": name,
             "patience": patience, "exist_ok": True, "plots": True}
     args.update(overrides)
     model.train(**args)
