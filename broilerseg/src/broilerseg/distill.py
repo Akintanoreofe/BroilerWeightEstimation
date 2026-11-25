@@ -111,17 +111,45 @@ def patch_mps_assigner() -> bool:
     return True
 
 
-def patch_nms_time_limit(max_time_img: float = 1.0) -> bool:
-    """Give Ultralytics' NMS more time per image during validation.
+def _move(obj, device):
+    """Move tensors (also inside lists / tuples / dicts) to ``device``."""
+    if hasattr(obj, "to") and hasattr(obj, "device"):
+        return obj.to(device)
+    if isinstance(obj, (list, tuple)):
+        moved = [_move(o, device) for o in obj]
+        return type(obj)(moved) if isinstance(obj, list) else tuple(moved)
+    if isinstance(obj, dict):
+        return {k: _move(v, device) for k, v in obj.items()}
+    return obj
+
+
+def _first_device(obj):
+    if hasattr(obj, "device") and hasattr(obj, "to"):
+        return obj.device
+    if isinstance(obj, (list, tuple)):
+        for o in obj:
+            d = _first_device(o)
+            if d is not None:
+                return d
+    return None
+
+
+def patch_nms_time_limit(max_time_img: float = 1.0, cpu_on_mps: bool = True) -> bool:
+    """Make Ultralytics' NMS reliable during validation on a Mac.
 
     Ultralytics stops NMS after ``2.0 + max_time_img * batch`` seconds
     (``max_time_img = 0.05`` by default) and silently drops the detections it
-    has not processed ("NMS time limit exceeded"). With ~30 birds per crop
-    and an untrained model on a Mac, every validation batch hits that limit,
-    so recall, mAP, early stopping and the choice of ``best.pt`` are all
-    distorted. This raises ``max_time_img`` (default 1 s per image). Safe to
-    call more than once; returns False if this Ultralytics version has no
-    such setting.
+    has not processed ("NMS time limit exceeded"), which distorts recall, mAP,
+    early stopping and the choice of ``best.pt``. Two fixes:
+
+    * ``max_time_img`` is raised (default 1 s per image);
+    * with ``cpu_on_mps``, NMS runs on the CPU when the predictions are on the
+      Apple GPU. On MPS, NMS over thousands of candidate boxes per crowded pen
+      crop got slower as training went on (even 18 s per batch was not
+      enough); on the CPU it takes milliseconds. Results go back to the GPU.
+
+    Safe to call more than once; returns False if this Ultralytics version
+    has no NMS function to patch.
     """
     import importlib
     import inspect
@@ -142,6 +170,10 @@ def patch_nms_time_limit(max_time_img: float = 1.0) -> bool:
 
         def nms(*args, _orig=orig, **kwargs):
             kwargs["max_time_img"] = max(float(kwargs.get("max_time_img", 0.05)), max_time_img)
+            dev = _first_device(args[0]) if args else None
+            if cpu_on_mps and dev is not None and getattr(dev, "type", str(dev)) == "mps":
+                out = _orig(*_move(args, "cpu"), **_move(kwargs, "cpu"))
+                return _move(out, dev)
             return _orig(*args, **kwargs)
 
         nms._broilerseg_orig = orig

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2 (2026-11-25)
+
+* `patch_nms_time_limit(cpu_on_mps=True)`: when training on the Apple GPU, Ultralytics'
+  validation NMS runs on the CPU (results go back to the GPU). On MPS it slowed down as the
+  model improved, hit even the raised 18 s limit, dropped detections (recall fell from 0.85
+  to 0.22) and made validation take up to 40 minutes. Applied by `train_student` and
+  `evaluate_student`.
+
 ## 0.6.1 (2026-11-25)
 
 * Memory: saved labels are no longer all loaded at once. Full-resolution pen-crop masks are
