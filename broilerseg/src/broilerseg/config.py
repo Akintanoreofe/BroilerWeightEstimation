@@ -43,7 +43,12 @@ class PromptConfig:
     prompts: dict[str, list[str]] = field(
         default_factory=lambda: {
             "broiler": ["chicken", "broiler chicken"],
-            "scale": ["weighing scale platform", "square platform"],
+            "scale": [# what it is
+        "scale", "platform scale", "floor scale", "digital scale",
+        # its shape
+        "square platform", "square plate", "flat square board", "rectangular tray",
+        # its material / colour: keep the ones that match what you see
+        "metal plate", "black square", "grey square", "plastic tray"],
             "feeder": ["orange feeder pan", "round feeding bowl"],
         }
     )
