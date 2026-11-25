@@ -7,7 +7,14 @@ import pytest
 from broilerseg.calibration import calibrate_from_hsv, calibrate_from_mask
 from broilerseg.config import FEEDER_DIAMETER_CM
 from broilerseg.evaluation import best_density, regression_metrics, split_events, sweep_grid
-from broilerseg.segmentation import Instance, SegmentationResult, box_from_mask, select_bird
+from broilerseg.segmentation import (
+    Instance,
+    SegmentationResult,
+    box_from_mask,
+    merge_single,
+    select_bird,
+    select_birds,
+)
 from broilerseg.segmentation.postprocess import clean_mask, mask_nms
 from broilerseg.volume import (
     align_mask,
@@ -89,19 +96,35 @@ def _inst(name, mask, score=0.9):
 
 def test_nms_and_bird_selection():
     h, w = 200, 300
-    scale = np.zeros((h, w), bool)
-    scale[50:150, 100:250] = True
-    on = disk(h, w, (180, 100), 20)
-    off = disk(h, w, (40, 40), 20)
-    res = SegmentationResult((h, w), [_inst("scale", scale), _inst("broiler", on),
-                                      _inst("broiler", on, 0.5), _inst("broiler", off)])
+    a = disk(h, w, (180, 100), 20)
+    b = disk(h, w, (40, 40), 20)
+    edge = disk(h, w, (290, 100), 20)                      # cut by the right border
+    res = SegmentationResult((h, w), [_inst("broiler", a, 0.8), _inst("broiler", a, 0.5),
+                                      _inst("broiler", b, 0.7), _inst("broiler", edge, 0.99)])
     res.instances = mask_nms(res.instances)
-    assert len(res.of_class("broiler")) == 2
-    bird, info = select_bird(res)
-    assert bird.mask[100, 180] and info["on_scale"] > 0.9
-    bird_gt, _ = select_bird(res, (20, 20, 60, 60))
-    assert bird_gt.mask[40, 40]
+    assert len(res.of_class("broiler")) == 3
+    bird_gt, info = select_bird(res, (20, 20, 60, 60))       # FlockLabel box picks the bird
+    assert bird_gt.mask[40, 40] and info["box_iou"] > 0.5
+    bird, info = select_bird(res)                           # no box: best bird fully in view
+    assert bird.mask[100, 180] and "on_scale" not in info
+    assert len(select_birds(res)) == 2
+    none, info = select_bird(res, (250, 0, 260, 5))
+    assert none is None and info["reason"] == "no_match_to_gt_box"
 
+
+def test_merge_single_feeder_pieces():
+    h, w = 120, 160
+    whole = disk(h, w, (60, 60), 30)
+    ring = whole & ~disk(h, w, (60, 60), 15)
+    centre = disk(h, w, (60, 60), 15)
+    far = disk(h, w, (140, 20), 8)
+    res = SegmentationResult((h, w), [_inst("feeder", ring, 0.95), _inst("feeder", centre, 0.9),
+                                      _inst("feeder", far, 0.5), _inst("broiler", far, 0.9)])
+    out = merge_single(res, ("feeder",))
+    feeders = out.of_class("feeder")
+    assert len(feeders) == 1 and feeders[0].score == 0.95
+    assert feeders[0].mask[60, 60] and feeders[0].mask[60, 85] and not feeders[0].mask[20, 140]
+    assert len(out.of_class("broiler")) == 1
 
 def test_clean_mask_fills_holes_and_drops_specks():
     m = disk(100, 100, (50, 50), 30)
@@ -158,3 +181,23 @@ def test_weight_unit_display_only():
     finally:
         viz.set_weight_unit("kg")
     assert viz.fmt_weight(2.5) == "2.500 kg"
+
+
+def test_old_label_files_still_load(tmp_path):
+    """Labels saved before 0.6 (broiler / scale / feeder ids) load without the scale."""
+    h, w = 40, 50
+    m = np.zeros((3, h, w), bool)
+    m[0, 5:15, 5:15] = m[1, 20:30, 20:40] = m[2, 25:35, 25:35] = True
+    np.savez_compressed(tmp_path / "old.npz", masks=m, class_ids=np.array([0, 1, 2], np.int16),
+                        scores=np.array([0.9, 0.8, 0.7], np.float32),
+                        boxes=np.array([[5, 5, 15, 15], [20, 20, 40, 30], [25, 25, 35, 35]],
+                                       np.float32),
+                        prompts=np.array(["a", "b", "c"], dtype=object),
+                        image_shape=np.array([h, w]), seconds=np.array(1.0))
+    from broilerseg.labeling import load_result, save_result
+
+    res = load_result(tmp_path / "old.npz")
+    assert res.counts() == {"broiler": 1, "feeder": 1}
+    assert res.best("feeder").mask[30, 30]
+    save_result(tmp_path / "new.npz", res)
+    assert load_result(tmp_path / "new.npz").counts() == {"broiler": 1, "feeder": 1}

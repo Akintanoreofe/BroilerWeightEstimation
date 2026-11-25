@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from broilerseg.config import CLASS_COLORS, CLASS_NAMES
+from broilerseg.config import CLASS_COLORS, CLASS_NAMES, LEGACY_CLASS_NAMES
 from broilerseg.io.video import iter_frames, sample_frame_indices, scan_videos
 from broilerseg.segmentation.base import Instance, SegmentationResult, Segmenter
 
@@ -35,7 +35,7 @@ def frame_stem(video_stem: str, index: int) -> str:
 
 def save_result(path: str | Path, result: SegmentationResult) -> None:
     """Save a segmentation result as a compressed ``.npz``."""
-    inst = result.instances
+    inst = [i for i in result.instances if i.class_name in CLASS_NAMES]
     h, w = result.image_shape
     np.savez_compressed(
         path,
@@ -46,24 +46,37 @@ def save_result(path: str | Path, result: SegmentationResult) -> None:
         prompts=np.array([i.prompt for i in inst], dtype=object),
         image_shape=np.array([h, w]),
         seconds=np.array(result.seconds),
+        class_names=np.array(CLASS_NAMES, dtype=object),
     )
 
 
-def load_result(path: str | Path) -> SegmentationResult:
-    """Load a result saved by :func:`save_result`."""
+def load_result(path: str | Path, single_instance=("feeder",)) -> SegmentationResult:
+    """Load a result saved by :func:`save_result`.
+
+    Label files from before version 0.6 (classes broiler / scale / feeder) load
+    too: their scale masks are dropped. Pieces of single-object classes (the
+    feeder) are merged into one instance; pass ``single_instance=()`` for the
+    raw teacher output.
+    """
+    from broilerseg.segmentation.postprocess import merge_single
+
     d = np.load(path, allow_pickle=True)
+    names = (tuple(str(n) for n in d["class_names"]) if "class_names" in d.files
+             else LEGACY_CLASS_NAMES)
     shape = tuple(int(v) for v in d["image_shape"])
-    inst = [Instance(CLASS_NAMES[int(c)], m.astype(bool), float(s), tuple(map(float, b)), str(p))
+    inst = [Instance(names[int(c)], m.astype(bool), float(s), tuple(map(float, b)), str(p))
             for m, c, s, b, p in zip(d["masks"], d["class_ids"], d["scores"], d["boxes"],
-                                     d["prompts"], strict=False)]
-    return SegmentationResult(shape, inst, float(d["seconds"]), "saved")
+                                     d["prompts"], strict=False)
+            if names[int(c)] in CLASS_NAMES]
+    res = SegmentationResult(shape, inst, float(d["seconds"]), "saved")
+    return merge_single(res, single_instance)
 
 
 def render_overlay(image_rgb: np.ndarray, result: SegmentationResult, alpha: float = 0.45
                    ) -> np.ndarray:
     """Fast OpenCV overlay (used for the saved quick-look JPEGs)."""
     out = image_rgb.astype(np.float32).copy()
-    for name in ("scale", "feeder", "broiler"):
+    for name in ("feeder", "broiler"):
         color = np.array(CLASS_COLORS[name]) * 255
         for inst in result.of_class(name):
             out[inst.mask] = (1 - alpha) * out[inst.mask] + alpha * color

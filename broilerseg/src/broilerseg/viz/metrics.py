@@ -147,7 +147,7 @@ def plot_frame_traces(records: pd.DataFrame, max_events: int = 12, ncols: int = 
                              sharey=True)
     for ax, e in zip(axes.ravel(), events, strict=False):
         d = records[records.event_id == e].sort_values("frame_label")
-        ax.plot(d.frame_label, d.actual_kg, color=SERIES["actual"], lw=2, label="scale")
+        ax.plot(d.frame_label, d.actual_kg, color=SERIES["actual"], lw=2, label="scale reading")
         ax.plot(d.frame_label, d.pred_kg, marker="o", ms=3, color=SERIES["pred"],
                 label="estimate")
         bad = d[d.pred_kg.isna()]

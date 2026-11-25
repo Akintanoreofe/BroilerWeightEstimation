@@ -17,8 +17,13 @@ FEEDER_DIAMETER_CM: float = 14 * 2.54  # 35.56 cm
 #: SAM 3 and Grounding DINO respond best to short noun phrases; edit in a notebook.
 PEN_PROMPTS: tuple[str, ...] = ("animal pen", "wood shavings bedding", "fenced enclosure")
 
-#: Segmentation classes, in YOLO class-id order.
-CLASS_NAMES: tuple[str, ...] = ("broiler", "scale", "feeder")
+#: Segmentation classes, in YOLO class-id order. The weighing scale is NOT segmented:
+#: the bird is found with the FlockLabel box (evaluation) and the feeder gives the
+#: pixel-to-cm scale.
+CLASS_NAMES: tuple[str, ...] = ("broiler", "feeder")
+
+#: Class order of label files written before version 0.6 (they also held "scale").
+LEGACY_CLASS_NAMES: tuple[str, ...] = ("broiler", "scale", "feeder")
 
 #: Default broiler density of the repository's calculator (kg / m^3).
 DEFAULT_DENSITY_KG_M3: float = 900.0
@@ -26,7 +31,6 @@ DEFAULT_DENSITY_KG_M3: float = 900.0
 #: Fixed RGB colours (0-1 floats) used by every plot, one per class.
 CLASS_COLORS: dict[str, tuple[float, float, float]] = {
     "broiler": (0.98, 0.75, 0.18),  # warm yellow
-    "scale": (0.20, 0.55, 0.90),  # blue
     "feeder": (0.90, 0.30, 0.25),  # orange-red
 }
 
@@ -43,15 +47,13 @@ class PromptConfig:
     prompts: dict[str, list[str]] = field(
         default_factory=lambda: {
             "broiler": ["chicken", "broiler chicken"],
-            "scale": [# what it is
-        "scale", "platform scale", "floor scale", "digital scale",
-        # its shape
-        "square platform", "square plate", "flat square board", "rectangular tray",
-        # its material / colour: keep the ones that match what you see
-        "metal plate", "black square", "grey square", "plastic tray"],
             "feeder": ["orange feeder pan", "round feeding bowl"],
         }
     )
+    #: Classes with exactly one object in the pen. Overlapping pieces are merged
+    #: into one mask and stray detections dropped (the feeder was often found as
+    #: 2-3 nested pieces: outer pan, inner ring, whole).
+    single_instance: tuple[str, ...] = ("feeder",)
     score_threshold: float = 0.4  # SAM 3 only; Grounded SAM 2 uses box_threshold
     mask_threshold: float = 0.5
 

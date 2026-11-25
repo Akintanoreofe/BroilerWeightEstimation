@@ -48,7 +48,7 @@ class WeightExperiment:
         Known feeder diameter.
     use_gt_box : bool
         Pick the bird that best matches the FlockLabel box (recommended for
-        validation); otherwise pick the bird standing on the scale.
+        validation); otherwise the most confident bird fully in view.
     border_margin : int
         Birds within this many pixels of the frame edge are flagged.
     """
@@ -94,10 +94,9 @@ class WeightExperiment:
                 "frame_label": s.frame_label, "actual_kg": s.weight_kg,
                 "event_weight_kg": s.event_weight_kg, "status": info.get("reason", "ok"),
                 "n_broiler": len(res.of_class("broiler")) if res else 0,
-                "n_scale": len(res.of_class("scale")) if res else 0,
                 "n_feeder": len(res.of_class("feeder")) if res else 0,
                 "bird_score": bird.score if bird else np.nan,
-                "box_iou": info.get("box_iou", np.nan), "on_scale": info.get("on_scale", np.nan),
+                "box_iou": info.get("box_iou", np.nan),
                 "feeder_score": feeder.score if feeder else np.nan,
                 "feeder_diameter_px": cal.diameter_px, "pixel_to_cm_frame": cal.pixel_to_cm,
                 "pixel_to_cm_hint": s.pixel_to_cm_hint,

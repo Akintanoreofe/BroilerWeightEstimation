@@ -10,14 +10,43 @@ from broilerseg.segmentation.postprocess import (
     clean_mask,
     mask_iou,
     mask_nms,
-    on_scale_fraction,
-    platform_region,
+    merge_single,
     select_bird,
+    select_birds,
     touches_border,
 )
 
 #: Teacher names accepted by :func:`load_teacher`.
 TEACHERS = ("grounded_sam2", "sam3")
+
+
+def load_mixed_teacher(mapping: dict[str, str], prompts=None, default: str | None = None,
+                       per_teacher: dict | None = None, **kwargs):
+    """Load a :class:`~broilerseg.segmentation.mixed.MixedTeacher`.
+
+    Parameters
+    ----------
+    mapping : dict
+        ``class -> teacher name``, e.g.
+        ``{"broiler": "sam3", "feeder": "grounded_sam2"}``.
+        Each named teacher is loaded once.
+    prompts : PromptConfig, optional
+        Phrases for every class.
+    default : str, optional
+        Class whose teacher handles other classes (stage-1 ``"pen"``).
+    per_teacher : dict, optional
+        Extra arguments for one teacher only, e.g.
+        ``{"grounded_sam2": {"box_threshold": 0.25}}``.
+    **kwargs
+        Passed to every teacher (``max_side``, ``device`` ...).
+    """
+    from broilerseg.segmentation.mixed import MixedTeacher
+
+    loaded = {}
+    for name in dict.fromkeys(mapping.values()):
+        loaded[name] = load_teacher(name, prompts=prompts, **kwargs,
+                                    **(per_teacher or {}).get(name, {}))
+    return MixedTeacher({c: loaded[n] for c, n in mapping.items()}, prompts, default)
 
 
 def load_teacher(name: str = "sam3", **kwargs):
@@ -54,6 +83,10 @@ def __getattr__(name):  # lazy heavy imports
         from broilerseg.segmentation.grounded_sam2 import GroundedSam2Segmenter
 
         return GroundedSam2Segmenter
+    if name == "MixedTeacher":
+        from broilerseg.segmentation.mixed import MixedTeacher
+
+        return MixedTeacher
     if name == "YoloSegmenter":
         from broilerseg.segmentation.yolo import YoloSegmenter
 
@@ -63,7 +96,8 @@ def __getattr__(name):  # lazy heavy imports
 
 __all__ = [
     "Instance", "SegmentationResult", "Segmenter", "box_from_mask", "box_iou", "clean_mask",
-    "mask_iou", "mask_nms", "on_scale_fraction", "platform_region", "select_bird",
-    "touches_border", "load_teacher", "TEACHERS", "Sam3Segmenter", "GroundedSam2Segmenter",
+    "mask_iou", "mask_nms", "merge_single", "select_bird", "select_birds",
+    "touches_border", "load_teacher", "load_mixed_teacher", "TEACHERS", "MixedTeacher",
+    "Sam3Segmenter", "GroundedSam2Segmenter",
     "YoloSegmenter",
 ]

@@ -1,4 +1,4 @@
-"""SAM 3 teacher: text-prompted segmentation of broiler, scale and feeder.
+"""SAM 3 teacher: text-prompted segmentation of broilers and the feeder.
 
 Uses the Hugging Face ``transformers`` implementation of SAM 3 because Meta's
 reference repository needs CUDA/Triton, while the ``transformers`` port runs on
@@ -15,7 +15,7 @@ import numpy as np
 
 from broilerseg.config import PromptConfig
 from broilerseg.segmentation.base import Instance, SegmentationResult, box_from_mask
-from broilerseg.segmentation.postprocess import mask_nms
+from broilerseg.segmentation.postprocess import mask_nms, merge_single
 
 # Let PyTorch fall back to CPU for the few operators MPS lacks.
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -35,7 +35,7 @@ def pick_device(prefer: str | None = None) -> str:
 
 
 class Sam3Segmenter:
-    """Segment broilers, the scale and the feeder with SAM 3 text prompts.
+    """Segment broilers and the feeder with SAM 3 text prompts.
 
     Parameters
     ----------
@@ -56,7 +56,7 @@ class Sam3Segmenter:
     >>> seg = Sam3Segmenter()                       # doctest: +SKIP
     >>> result = seg.segment(frame_rgb)             # doctest: +SKIP
     >>> result.counts()                             # doctest: +SKIP
-    {'broiler': 1, 'scale': 1, 'feeder': 1}
+    {'broiler': 1, 'feeder': 1}
     """
 
     name = "SAM 3"
@@ -105,7 +105,7 @@ class Sam3Segmenter:
 
     # ------------------------------------------------------------------ public
     def segment(self, image_rgb: np.ndarray) -> SegmentationResult:
-        """Segment one RGB ``uint8`` frame into broiler / scale / feeder instances."""
+        """Segment one RGB ``uint8`` frame into broiler / feeder instances."""
         import cv2
         from PIL import Image
 
@@ -135,5 +135,5 @@ class Sam3Segmenter:
                         instances.append(Instance(class_name, mask, float(s),
                                                   box_from_mask(mask), phrase))
         instances = mask_nms(instances, self.nms_iou)
-        return SegmentationResult((full_h, full_w), instances,
-                                  time.perf_counter() - t0, self.name)
+        res = SegmentationResult((full_h, full_w), instances, time.perf_counter() - t0, self.name)
+        return merge_single(res, self.prompts.single_instance)

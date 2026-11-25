@@ -36,7 +36,7 @@ def test_label_build_and_read_back(demo, tmp_path):
                             progress=False)
     assert len(man) == 12
     res = load_result(tmp_path / "labels" / man.masks.iloc[0])
-    assert res.counts() == {"broiler": 2, "scale": 1, "feeder": 1}
+    assert res.counts() == {"broiler": 2, "feeder": 1}
     again = auto_label_videos(demo["videos"], tmp_path / "labels", ColorSegmenter(), plan=plan,
                               progress=False)
     assert len(again) == 12  # resumed, nothing duplicated
@@ -46,7 +46,7 @@ def test_label_build_and_read_back(demo, tmp_path):
     assert np.nanmin(ds.fidelity_broiler) > 0.9
     r = ds.iloc[0]
     lines = read_yolo_label(tmp_path / "yolo" / "labels" / r.split / f"{r.stem}.txt", 640, 480)
-    assert sorted({c for c, _ in lines}) == [0, 1, 2]
+    assert sorted({c for c, _ in lines}) == [0, 1]                  # broiler, feeder
 
 
 def test_nested_folders_unique_ids_and_folder_split(tmp_path):

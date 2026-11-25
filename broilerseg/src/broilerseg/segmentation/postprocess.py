@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from broilerseg.segmentation.base import Instance, SegmentationResult
+from broilerseg.segmentation.base import Instance, SegmentationResult, box_from_mask
 
 
 def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -83,46 +83,49 @@ def touches_border(mask: np.ndarray, margin: int = 10) -> bool:
     )
 
 
-def platform_region(result: SegmentationResult) -> np.ndarray:
-    """Return the filled convex hull of the scale and feeder masks.
+def merge_single(result: SegmentationResult, classes=("feeder",),
+                 pad: float = 0.05) -> SegmentationResult:
+    """Collapse classes that have one object in the scene into a single instance.
 
-    A bird standing on the scale hides part of the platform, so the raw scale
-    mask has a bird-shaped hole. The convex hull restores the platform outline.
+    The most confident instance is kept, together with every other instance of
+    the same class whose box overlaps its box (widened by ``pad`` of its size):
+    those are pieces of the same object (e.g. the feeder's outer pan and inner
+    ring) and their masks are merged. Instances elsewhere are dropped.
     """
-    union = result.union("scale") | result.union("feeder")
-    out = np.zeros(result.image_shape, dtype=np.uint8)
-    if union.any():
-        pts = cv2.findNonZero(union.astype(np.uint8))
-        cv2.fillConvexPoly(out, cv2.convexHull(pts), 1)
-    return out.astype(bool)
+    classes = tuple(c for c in classes if len(result.of_class(c)) > 1)
+    if not classes:
+        return result
+    keep = [i for i in result.instances if i.class_name not in classes]
+    for c in classes:
+        insts = result.of_class(c)
+        best = max(insts, key=lambda i: (i.score, i.area))
+        x0, y0, x1, y1 = best.box_xyxy
+        dx, dy = pad * (x1 - x0), pad * (y1 - y0)
+        grow = (x0 - dx, y0 - dy, x1 + dx, y1 + dy)
+        group = [i for i in insts if i is best or box_iou(i.box_xyxy, grow) > 0]
+        mask = np.logical_or.reduce([i.mask for i in group])
+        keep.append(Instance(c, mask, best.score, box_from_mask(mask), best.prompt))
+    return SegmentationResult(result.image_shape, keep, result.seconds, result.source)
 
 
-def on_scale_fraction(mask: np.ndarray, platform: np.ndarray) -> float:
-    """Fraction of a bird mask that lies over the platform region."""
-    area = mask.sum()
-    return float(np.logical_and(mask, platform).sum() / area) if area else 0.0
+def select_bird(result: SegmentationResult, gt_box_xyxy=None, min_box_iou: float = 0.1,
+                avoid_border: bool = True) -> tuple[Instance | None, dict]:
+    """Choose the broiler to estimate.
 
-
-def select_bird(result: SegmentationResult, gt_box_xyxy=None, min_on_scale: float = 0.3,
-                min_box_iou: float = 0.1) -> tuple[Instance | None, dict]:
-    """Choose the broiler whose weight the scale is reading.
-
-    With a FlockLabel ground-truth box, the broiler instance with the highest
-    box IoU is chosen. Without one, the broiler with the largest fraction of
-    its mask over the scale / feeder platform is chosen.
+    With a FlockLabel ground-truth box (evaluation against the scale reading),
+    the broiler whose box overlaps it most is chosen. Without one, the most
+    confident broiler that is fully in view (not cut by the image border) is
+    chosen; use :func:`select_birds` to estimate every visible bird.
 
     Returns
     -------
     instance : Instance or None
         The chosen bird (``None`` if nothing qualifies).
     info : dict
-        Diagnostic numbers for plots and tables: ``n_candidates``,
-        ``box_iou``, ``on_scale``, ``reason``.
+        ``n_candidates``, ``box_iou`` and ``reason`` for plots and tables.
     """
     birds = result.of_class("broiler")
-    platform = platform_region(result)
-    info = {"n_candidates": len(birds), "box_iou": np.nan, "on_scale": np.nan,
-            "reason": "ok"}
+    info = {"n_candidates": len(birds), "box_iou": np.nan, "reason": "ok"}
     if not birds:
         info["reason"] = "no_broiler"
         return None, info
@@ -133,14 +136,14 @@ def select_bird(result: SegmentationResult, gt_box_xyxy=None, min_on_scale: floa
         if ious[k] < min_box_iou:
             info["reason"] = "no_match_to_gt_box"
             return None, info
-        chosen = birds[k]
-    else:
-        fractions = [on_scale_fraction(b.mask, platform) for b in birds]
-        k = int(np.argmax(fractions))
-        if fractions[k] < min_on_scale:
-            info["on_scale"] = fractions[k]
-            info["reason"] = "no_bird_on_scale"
-            return None, info
-        chosen = birds[k]
-    info["on_scale"] = on_scale_fraction(chosen.mask, platform) if platform.any() else np.nan
-    return chosen, info
+        return birds[k], info
+    cands = select_birds(result) if avoid_border else birds
+    if not cands:
+        info["reason"] = "all_birds_cut_by_border"
+        return None, info
+    return max(cands, key=lambda b: b.score), info
+
+
+def select_birds(result: SegmentationResult, margin: int = 2) -> list[Instance]:
+    """Return every broiler fully in view (not touching the image border)."""
+    return [b for b in result.of_class("broiler") if not touches_border(b.mask, margin)]

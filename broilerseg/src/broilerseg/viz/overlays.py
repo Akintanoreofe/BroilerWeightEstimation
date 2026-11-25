@@ -9,10 +9,9 @@ from matplotlib.patches import Rectangle
 
 from broilerseg.config import CLASS_NAMES
 from broilerseg.segmentation.base import Instance, SegmentationResult
-from broilerseg.segmentation.postprocess import platform_region
 from broilerseg.viz.style import class_color, class_legend, crop_box, image_ax, new_ax
 
-_ORDER = ("scale", "feeder", "broiler")
+_ORDER = ("feeder", "broiler")
 
 
 def blend_masks(image: np.ndarray, result: SegmentationResult, alpha: float = 0.45,
@@ -128,7 +127,7 @@ def plot_gallery(items, ncols: int = 4, size: float = 4.0, title: str | None = N
         plot_overlay(img, res, ax=ax, title=None, show_boxes=False, show_scores=show_scores,
                      legend=False)
         c = res.counts()
-        ax.set_title(f"{cap}\nB{c['broiler']} S{c['scale']} F{c['feeder']}", fontsize=9)
+        ax.set_title(f"{cap}\nbirds {c['broiler']} | feeder {c['feeder']}", fontsize=9)
     for ax in axes.ravel()[n:]:
         ax.axis("off")
     class_legend(axes.ravel()[0], loc="upper left")
@@ -140,12 +139,13 @@ def plot_gallery(items, ncols: int = 4, size: float = 4.0, title: str | None = N
 
 def plot_bird_selection(image: np.ndarray, result: SegmentationResult, chosen: Instance | None,
                         gt_box_xyxy=None, info: dict | None = None, ax=None,
-                        title: str = "Which bird is on the scale?"):
-    """Show all broiler candidates, the platform region, the GT box and the chosen bird."""
+                        title: str = "Which bird is estimated?"):
+    """Show all broiler candidates, the feeder, the FlockLabel box and the chosen bird."""
     fig, ax = new_ax(ax, (8, 6))
-    plat = platform_region(result)
     out = (image * 0.6).astype(np.uint8)
-    out[plat] = (0.6 * out[plat] + 0.4 * np.array([90, 150, 255])).astype(np.uint8)
+    feeder = result.union("feeder")
+    fcol = np.array(class_color("feeder")) * 255
+    out[feeder] = (0.5 * out[feeder] + 0.5 * fcol).astype(np.uint8)
     for inst in result.of_class("broiler"):
         out[inst.mask] = (0.5 * out[inst.mask] + 0.5 * np.array([200, 200, 200])).astype(np.uint8)
     if chosen is not None:
@@ -169,7 +169,7 @@ def plot_bird_selection(image: np.ndarray, result: SegmentationResult, chosen: I
                 bbox={"fc": "white", "alpha": 0.85, "ec": "none"})
     from matplotlib.patches import Patch
 
-    ax.legend(handles=[Patch(color=(90 / 255, 150 / 255, 1), label="scale+feeder platform"),
+    ax.legend(handles=[Patch(color=class_color("feeder"), label="feeder (calibration)"),
                        Patch(color=(0.78, 0.78, 0.78), label="other broilers"),
                        Patch(color=class_color("broiler"), label="chosen bird"),
                        Patch(fc="none", ec="lime", label="FlockLabel box")],

@@ -101,7 +101,7 @@ def test_two_stage_labelling_on_nested_demo(tmp_path):
                             rois=rois, progress=False)
     assert man.cropped.all() and (man.width < 800).all() and (man.full_width == 800).all()
     res = load_result(tmp_path / "lab" / man.masks.iloc[0])
-    assert res.counts()["feeder"] == 1 and res.counts()["scale"] == 1
+    assert res.counts()["feeder"] == 1 and res.counts()["broiler"] >= 2   # + demo fence rail
     with pytest.raises(ValueError):                              # no mixing crop settings
         auto_label_videos(p["videos"], tmp_path / "lab", ColorSegmenter(), plan=plan,
                           progress=False)
@@ -163,3 +163,28 @@ def test_resolve_base_model_uses_local_copy(tmp_path, monkeypatch):
     assert resolve_base_model("yolov8n-seg.yaml", base) == "yolov8n-seg.yaml"
     with pytest.raises(FileNotFoundError):
         resolve_base_model(tmp_path / "nowhere" / "x.pt", base)
+
+
+def test_mixed_teacher_routes_classes_and_pen():
+    from broilerseg.config import PromptConfig
+    from broilerseg.segmentation.mixed import MixedTeacher
+
+    class Fake:
+        def __init__(self, name):
+            self.name, self.device, self.prompts, self.calls = name, "cpu", PromptConfig(), []
+
+        def segment(self, img):
+            self.calls.append(sorted(self.prompts.prompts))
+            m = np.zeros(img.shape[:2], bool)
+            m[2:5, 2:5] = True
+            return SegmentationResult(img.shape[:2], [Instance(c, m, 0.9, (2, 2, 5, 5), self.name)
+                                                      for c in self.prompts.prompts])
+
+    a, b = Fake("A"), Fake("B")
+    mt = MixedTeacher({"broiler": a, "feeder": b})
+    res = mt.segment(np.zeros((10, 10, 3), np.uint8))
+    assert a.calls == [["broiler"]] and b.calls == [["feeder"]]
+    assert {i.class_name: i.prompt for i in res.instances} == {"broiler": "A", "feeder": "B"}
+    assert set(a.prompts.prompts) == {"broiler", "feeder"}                  # restored
+    roi, _ = detect_pen_roi([np.zeros((10, 10, 3), np.uint8)], PenDetector(mt), min_area=0.0)
+    assert a.calls[-1] == ["pen"] and b.calls == [["feeder"]]              # pen -> default teacher

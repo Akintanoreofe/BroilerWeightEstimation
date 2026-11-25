@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.0 (2026-11-24)
+
+* **The weighing scale is no longer segmented.** Classes are now `broiler` and `feeder`
+  (`CLASS_NAMES`); SAM 3 labelled the scale unreliably. YOLO learns two classes.
+* Bird choice (`select_bird`): with a FlockLabel box (evaluation), the broiler whose box
+  overlaps it most; without one, the most confident bird fully in view. New `select_birds`
+  returns every bird fully in view (flock estimate on the Pi). `platform_region` and
+  `on_scale_fraction` are removed.
+* The feeder (pixel-to-cm calibration) is one object: `merge_single` merges overlapping
+  feeder pieces (outer pan, inner ring ...) into one mask and drops stray detections. It is
+  applied by SAM 3, Grounded SAM 2, the YOLO student and `load_result`
+  (`PromptConfig.single_instance`).
+* Label files from earlier versions still load: their scale masks are ignored and feeder
+  pieces merged, so existing labels can be reused without running the teacher again.
+* Notebook 2 (NMS / memory): the teacher is freed before training and re-loaded after,
+  `BATCH = 8`, `CACHE = "ram"`, `EPOCHS = 60`, `PATIENCE = 15`; the NMS time-limit fix
+  (0.5.3) stays in `train_student`. New dataset folder `yolo_dataset_2class`.
+
+## 0.5.4 (2026-11-24)
+
+* `MixedTeacher` / `load_mixed_teacher`: a different teacher per class, e.g. SAM 3 for
+  broiler and feeder, Grounded SAM 2 for the scale. Each model runs once per image on its
+  own classes; stage 1 (the pen) uses the `default` class's teacher.
+* Notebooks 1 and 2: `TEACHER = "mixed"` with `MIXED_TEACHER = {...}`. Notebook 2:
+  `COMPARE_TEACHERS = True` shows SAM 3 vs Grounded SAM 2 on the same pen crops for the
+  scale and the feeder, with a count / score table.
+
 ## 0.5.3 (2026-11-23)
 
 * `patch_nms_time_limit` (applied by `train_student` and `evaluate_student`): Ultralytics'

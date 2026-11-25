@@ -24,7 +24,7 @@ import numpy as np
 
 from broilerseg.config import PromptConfig
 from broilerseg.segmentation.base import Instance, SegmentationResult, box_from_mask
-from broilerseg.segmentation.postprocess import box_iou, mask_nms
+from broilerseg.segmentation.postprocess import box_iou, mask_nms, merge_single
 from broilerseg.segmentation.sam3 import pick_device
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -49,7 +49,7 @@ def box_nms(dets: list[dict], iou_threshold: float = 0.5) -> list[dict]:
 
 
 class GroundedSam2Segmenter:
-    """Text-prompted broiler / scale / feeder segmentation without gated models.
+    """Text-prompted broiler / feeder segmentation without gated models.
 
     Parameters
     ----------
@@ -142,7 +142,7 @@ class GroundedSam2Segmenter:
 
     # ------------------------------------------------------------------ public
     def segment(self, image_rgb: np.ndarray) -> SegmentationResult:
-        """Segment one RGB ``uint8`` frame into broiler / scale / feeder instances."""
+        """Segment one RGB ``uint8`` frame into broiler / feeder instances."""
         from PIL import Image
 
         t0 = time.perf_counter()
@@ -167,5 +167,6 @@ class GroundedSam2Segmenter:
                     instances.append(Instance(d["class_name"], m, d["score"], box_from_mask(m),
                                               d["phrase"]))
         instances = mask_nms(instances, self.mask_nms_iou)
-        return SegmentationResult((full_h, full_w), instances, time.perf_counter() - t0,
-                                  self.name)
+        res = SegmentationResult((full_h, full_w), instances, time.perf_counter() - t0,
+                                 self.name)
+        return merge_single(res, getattr(self.prompts, "single_instance", ()))

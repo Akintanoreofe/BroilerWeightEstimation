@@ -65,8 +65,7 @@ class ColorSegmenter:
         feeder = cv2.morphologyEx(((img[..., 0] > 180) & (img[..., 1] < 140)
                                    & (img[..., 2] < 60)).astype(np.uint8),
                                   cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-        groups = (("scale", near(SCALE_RGB, 18)), ("feeder", feeder),
-                  ("broiler", near(BIRD_RGB, 25)))
+        groups = (("feeder", feeder), ("broiler", near(BIRD_RGB, 25)))
         for name, m in groups:
             m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
             n, lab, stats, _ = cv2.connectedComponentsWithStats(m)
@@ -74,11 +73,6 @@ class ColorSegmenter:
                 if stats[k, cv2.CC_STAT_AREA] < 200:
                     continue
                 mk = lab == k
-                if name == "scale":  # include what sits on the platform, as SAM 3 tends to
-                    pts = cv2.findNonZero(mk.astype(np.uint8))
-                    full = np.zeros((h, w), np.uint8)
-                    cv2.fillConvexPoly(full, cv2.convexHull(pts), 1)
-                    mk = full.astype(bool)
                 inst.append(Instance(name, mk, 0.9, box_from_mask(mk), "colour"))
         return SegmentationResult((h, w), inst, time.perf_counter() - t0, self.name)
 

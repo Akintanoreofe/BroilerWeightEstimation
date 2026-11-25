@@ -26,16 +26,19 @@ class YoloSegmenter:
         Confidence threshold.
     device : str, optional
         Torch device; Ultralytics picks one if omitted.
+    single_instance : tuple of str
+        Classes merged into one object per image (the feeder).
     """
 
     def __init__(self, weights: str | Path, imgsz: int = 640, conf: float = 0.25,
-                 device: str | None = None) -> None:
+                 device: str | None = None, single_instance=("feeder",)) -> None:
         from ultralytics import YOLO
 
         self.model = YOLO(str(weights), task="segment")
         self.imgsz = imgsz
         self.conf = conf
         self.device = device
+        self.single_instance = tuple(single_instance)
         self.name = f"YOLO ({Path(weights).name})"
 
     def segment(self, image_rgb: np.ndarray) -> SegmentationResult:
@@ -59,4 +62,7 @@ class YoloSegmenter:
                 mask = m > 0.5
                 cname = names[int(c)] if names else CLASS_NAMES[int(c)]
                 instances.append(Instance(cname, mask, float(s), box_from_mask(mask), "yolo"))
-        return SegmentationResult((h, w), instances, time.perf_counter() - t0, self.name)
+        from broilerseg.segmentation.postprocess import merge_single
+
+        out = SegmentationResult((h, w), instances, time.perf_counter() - t0, self.name)
+        return merge_single(out, self.single_instance)

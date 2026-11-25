@@ -4,7 +4,7 @@
 
 `broilerseg` is an experimental, installable Python package with two Jupyter notebooks. It:
 
-1. uses a text-prompted **teacher** model to segment three things in poultry-house footage: the **broiler**, the **scale** and the **feeder (feeding pan)** on the scale. The teacher is either **Grounded SAM 2** (Grounding DINO + SAM 2.1; public, no approval) or **SAM 3** (gated);
+1. uses a text-prompted **teacher** model to segment two things in poultry-house footage: the **broiler** and the **feeder (feeding pan)**, whose known 14-inch diameter gives the pixel-to-cm scale. The weighing scale is not segmented: for evaluation the FlockLabel box picks the bird the scale weighed. The teacher is either **Grounded SAM 2** (Grounding DINO + SAM 2.1; public, no approval) or **SAM 3** (gated);
 2. turns the feeder (known diameter **35.56 cm / 14 in**) into a **pixel-to-cm** scale;
 3. estimates each bird's weight with the **slice-based volume model** from
    [BroilerWeightEstimation](https://github.com/ganhao89/BroilerWeightEstimation): the bird mask is rotated, cut into cylinders and summed, then multiplied by density;
@@ -67,7 +67,7 @@ Each notebook **prompts you to paste a folder path**. To skip the prompt, set th
 
 ```
 full 4K frame --stage 1: "animal pen" prompt--> pen box --crop, full resolution-->
-pen crop --stage 2: broiler / scale / feeder--> masks (pasted back to full-frame coordinates)
+pen crop --stage 2: broiler / feeder--> masks (pasted back to full-frame coordinates)
 ```
 
 ```python
@@ -85,7 +85,7 @@ result = seg.segment(frame_rgb)                      # masks in full-frame coord
 src/broilerseg/
   config.py          classes, text prompts, feeder diameter, density defaults
   io/                video folder scanning + FlockLabel export loader
-  segmentation/      Grounded SAM 2 / SAM 3 teachers, YOLO student, mask NMS / clean-up / bird-on-scale selection
+  segmentation/      Grounded SAM 2 / SAM 3 teachers, YOLO student, mask NMS / clean-up / bird selection (FlockLabel box)
   calibration.py     pixel-to-cm from the feeder (3 methods + repository HSV fallback)
   volume.py          body-axis alignment, slice profile, cylinder volume, mass
   experiments.py     WeightExperiment: segment -> calibrate -> select bird -> volume -> kg
@@ -108,9 +108,9 @@ from broilerseg.volume import estimate_volume
 from broilerseg import viz
 
 seg = Sam3Segmenter()                         # cuda > mps > cpu
-res = seg.segment(frame_rgb)                  # broiler / scale / feeder instances
+res = seg.segment(frame_rgb)                  # broiler / feeder instances
 cal = calibrate_from_mask(res.best("feeder").mask)
-bird, info = select_bird(res)                 # the bird standing on the scale
+bird, info = select_bird(res, gt_box)         # the bird inside the FlockLabel box
 est = estimate_volume(bird.mask, cal.pixel_to_cm, density_kg_m3=900, slice_count=None)
 print(est.mass_kg)
 viz.plot_volume_storyboard(frame_rgb, res, bird, est)

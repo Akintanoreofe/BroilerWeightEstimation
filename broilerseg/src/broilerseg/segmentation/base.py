@@ -76,11 +76,11 @@ class SegmentationResult:
         """Return the number of instances per class."""
         return {c: len(self.of_class(c)) for c in CLASS_NAMES}
 
-    def label_map(self, order: tuple[str, ...] = ("scale", "feeder", "broiler")) -> np.ndarray:
+    def label_map(self, order: tuple[str, ...] = ("feeder", "broiler")) -> np.ndarray:
         """Return an integer map: 0 background, ``k`` = ``CLASS_NAMES.index(c) + 1``.
 
         Classes are painted in ``order`` so later classes sit on top (a bird on
-        the scale stays visible).
+        the feeder stays visible).
         """
         out = np.zeros(self.image_shape, dtype=np.uint8)
         for name in order:

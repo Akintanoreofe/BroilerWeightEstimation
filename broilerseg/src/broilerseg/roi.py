@@ -2,7 +2,7 @@
 
 The CCTV view shows much more than the pen (the floor around it, a desk, a
 computer, cables). Segmenting the whole frame makes the teacher confuse the
-scale, the feeder and the birds with that clutter, and a 16:9 4K frame squeezed
+feeder and the birds with that clutter, and a 16:9 4K frame squeezed
 into the teacher's input leaves each bird only a few pixels wide.
 
 The two-stage pipeline fixes both:
@@ -13,7 +13,7 @@ The two-stage pipeline fixes both:
    *fractions* of the frame so it also fits other resolutions of the same camera.
 2. **Stage 2 - objects.** Frames are cropped to the pen (at full resolution, so
    no detail is lost and pixel-to-cm calibration is unchanged) and only the crop
-   is segmented into broiler / scale / feeder.
+   is segmented into broiler / feeder.
 
 :class:`CroppedSegmenter` wraps any segmenter (SAM 3, Grounded SAM 2 or the YOLO
 student) so it runs on the pen crop but returns masks in full-frame
@@ -273,7 +273,7 @@ class PenDetector:
         old = getattr(self.teacher, "prompts", None)
         if not isinstance(old, PromptConfig):
             return self.teacher.segment(image_rgb)  # e.g. a synthetic stand-in
-        pen = PromptConfig(prompts={"pen": self.phrases},
+        pen = PromptConfig(prompts={"pen": self.phrases}, single_instance=(),
                            score_threshold=self.score_threshold or old.score_threshold,
                            mask_threshold=old.mask_threshold)
         self.teacher.prompts = pen
