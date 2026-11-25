@@ -201,3 +201,23 @@ def test_old_label_files_still_load(tmp_path):
     assert res.best("feeder").mask[30, 30]
     save_result(tmp_path / "new.npz", res)
     assert load_result(tmp_path / "new.npz").counts() == {"broiler": 1, "feeder": 1}
+
+
+def test_lazy_results_load_on_demand(tmp_path):
+    from broilerseg.labeling import LazyResults, count_labels, save_result
+
+    (tmp_path / "masks").mkdir()
+    for k in range(5):
+        m = np.zeros((20, 20), bool)
+        m[2:5 + k, 2:6] = True
+        res = SegmentationResult((20, 20), [_inst("broiler", m, 0.9), _inst("feeder", m, 0.8)])
+        save_result(tmp_path / "masks" / f"f{k}.npz", res)
+    lazy = LazyResults(tmp_path, [f"f{k}" for k in range(5)], cache=2)
+    assert len(lazy) == 5 and list(lazy)[0] == "f0"
+    assert lazy["f3"].counts() == {"broiler": 1, "feeder": 1} and len(lazy._cache) == 1
+    _ = [lazy[s] for s in lazy]
+    assert len(lazy._cache) == 2                                    # never more than `cache`
+    with pytest.raises(KeyError):
+        lazy["missing"]
+    counts = count_labels(tmp_path, list(lazy), progress=False)
+    assert counts.n_feeder.tolist() == [1] * 5

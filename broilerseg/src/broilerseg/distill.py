@@ -221,17 +221,25 @@ def compare_results(teacher: SegmentationResult, student: SegmentationResult) ->
 
 
 def teacher_student_table(
-    images: dict[str, np.ndarray], teacher_results: dict[str, SegmentationResult],
-    student: Segmenter,
+    images, teacher_results, student: Segmenter, keep=None,
 ) -> tuple[pd.DataFrame, dict[str, SegmentationResult]]:
     """Run the student on images the teacher labelled and measure agreement.
+
+    ``images`` and ``teacher_results`` may be lazy mappings
+    (:class:`broilerseg.labeling.LazyResults`): each frame is handled and then
+    released. ``keep`` limits which student results are returned (all if
+    None; ``()`` for none). Full-resolution masks of many frames do not fit
+    in memory, so re-run the student on the few frames you want to plot.
 
     Returns a long table (one row per image and class) and the student results.
     """
     rows, student_results = [], {}
-    for stem, img in images.items():
+    keep = None if keep is None else set(keep)
+    for stem in images:
+        img = images[stem]
         res = student.segment(img)
-        student_results[stem] = res
+        if keep is None or stem in keep:
+            student_results[stem] = res
         for r in compare_results(teacher_results[stem], res):
             rows.append({"stem": stem, "student_seconds": res.seconds, **r})
     return pd.DataFrame(rows), student_results

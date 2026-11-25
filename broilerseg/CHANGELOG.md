@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 (2026-11-25)
+
+* Memory: saved labels are no longer all loaded at once. Full-resolution pen-crop masks are
+  about 4 MB each (~85 MB per frame), so holding every frame needed tens of GB and got the
+  kernel killed (and caused swapping / NMS time-outs). New `LazyResults`,
+  `load_frames_lazily` and `count_labels` read one frame at a time;
+  `teacher_student_table(..., keep=())` no longer keeps every student result.
+* Notebook 2 uses them in the labelling cell and in section 7.
+
 ## 0.6.0 (2026-11-24)
 
 * **The weighing scale is no longer segmented.** Classes are now `broiler` and `feeder`

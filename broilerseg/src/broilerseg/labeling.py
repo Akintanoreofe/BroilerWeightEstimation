@@ -17,6 +17,7 @@ can be interrupted and resumed.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import cv2
@@ -48,6 +49,82 @@ def save_result(path: str | Path, result: SegmentationResult) -> None:
         seconds=np.array(result.seconds),
         class_names=np.array(CLASS_NAMES, dtype=object),
     )
+
+
+class LazyResults(Mapping):
+    """Saved teacher results that are read from disk only when used.
+
+    Behaves like ``{stem: SegmentationResult}`` but keeps nothing in memory:
+    a pen crop's masks are full resolution (about 4 MB each, ~20 per frame),
+    so loading every frame at once can need tens of GB and get the notebook
+    killed. A few recently used results are kept (``cache``).
+
+    Parameters
+    ----------
+    label_dir : path-like
+        Folder written by :func:`auto_label_videos`.
+    stems : iterable of str
+        Frames to expose (e.g. ``manifest.stem``).
+    loader : callable, optional
+        ``stem -> value``; defaults to reading ``masks/<stem>.npz``.
+    cache : int
+        How many recent items to keep in memory.
+    """
+
+    def __init__(self, label_dir: str | Path, stems, loader=None, cache: int = 8) -> None:
+        self.label_dir = Path(label_dir)
+        self.stems = list(dict.fromkeys(stems))
+        self._set = set(self.stems)
+        self._loader = loader or (lambda s: load_result(self.label_dir / "masks" / f"{s}.npz"))
+        self._cache: dict = {}
+        self._max = cache
+
+    def __getitem__(self, stem):
+        if stem not in self._set:
+            raise KeyError(stem)
+        if stem in self._cache:
+            return self._cache[stem]
+        value = self._loader(stem)
+        if self._max:
+            if len(self._cache) >= self._max:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[stem] = value
+        return value
+
+    def __iter__(self):
+        return iter(self.stems)
+
+    def __len__(self) -> int:
+        return len(self.stems)
+
+
+def load_frames_lazily(label_dir: str | Path, stems, cache: int = 8) -> LazyResults:
+    """``{stem: RGB frame}`` read from ``frames/<stem>.jpg`` only when used."""
+    label_dir = Path(label_dir)
+
+    def read(stem):
+        return cv2.cvtColor(cv2.imread(str(label_dir / "frames" / f"{stem}.jpg")),
+                            cv2.COLOR_BGR2RGB)
+
+    return LazyResults(label_dir, stems, read, cache)
+
+
+def count_labels(label_dir: str | Path, stems, progress: bool = True) -> pd.DataFrame:
+    """Objects per class in each saved frame (feeder pieces merged), one file at a time."""
+    rows = []
+    stems = list(stems)
+    it = stems
+    if progress:
+        try:
+            from tqdm.auto import tqdm
+
+            it = tqdm(stems, desc="Counting labels")
+        except ImportError:  # pragma: no cover
+            pass
+    for s in it:
+        c = load_result(Path(label_dir) / "masks" / f"{s}.npz").counts()
+        rows.append({"stem": s, **{f"n_{k}": v for k, v in c.items()}})
+    return pd.DataFrame(rows)
 
 
 def load_result(path: str | Path, single_instance=("feeder",)) -> SegmentationResult:
